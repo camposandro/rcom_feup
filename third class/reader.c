@@ -15,19 +15,21 @@
 #define TRUE 1
 
 #define FLAG 0x7E
-#define A 0x01
-#define C 0x03
-#define BCC A^C
-
-#define C_CONFIRM 0x07
+#define A_RECEIVED 0x03
+#define A_SENT 0x01
 
 volatile int RECEIVED=FALSE;
 
+unsigned char data[]; 
+
+unsigned char original_data[];
+
+int i = 0, j = 0;
 
 typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC } State;
 
-/* state machine for handling received bytes */
-void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
+
+void handle_bytes(State* state, unsigned char byte, unsigned char setup[]) {
 	switch(*state) {
 		case INITIAL:
 			if (byte == FLAG) {
@@ -36,8 +38,8 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 			}
 			break;
 		case STATE_FLAG:
-			if (byte == A) {
-				setup[1] = A;
+			if (byte == A_RECEIVED) {
+				setup[1] = A_RECEIVED;
 				*state = STATE_A;
 			} else if (byte == FLAG) {
 				setup[0] = FLAG;
@@ -47,8 +49,8 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 			}
 			break;
 		case STATE_A:
-			if (byte == C) {
-				setup[2] = C;
+			if (byte != setup[2]) {
+				*setup[2] = byte;
 				*state = STATE_C;
 			} else if (byte == FLAG) {
 				setup[0] = FLAG;
@@ -68,13 +70,32 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 				*state = INITIAL;
 			}
 			break;
-		case STATE_BCC:
+		case STATE_BCC1:
+			original_data[j] = malloc(sizeof(unsigned char));
+			original_data[j++] = byte;
 			if (byte == FLAG) {
-				RECEIVED = TRUE;
-				setup[4] = FLAG;			
+				data[i] = malloc(sizeof(unsigned char));
+				data[i++] = 0x7d;
+				data[i] = malloc(sizeof(unsigned char));
+				data[i++] = 0x5e;
+			} else if (byte == 0x7d) {
+				data[i] = malloc(sizeof(unsigned char));
+				data[i++] = 0x7d;
+				data[i] = malloc(sizeof(unsigned char));
+				data[i++] = 0x5d;
+			} else {
+				data[i] = malloc(sizeof(unsigned char));
+				data[i++] = byte;
 			}
-			else
+			break;
+		case STATE_BCC2:
+			if (byte == FLAG) {
+				setup[i] = FLAG;
+				RECEIVED = TRUE;		
+			} else {
+				setup[0] = FLAG;
 				*state = INITIAL;
+			} 
 			break;
 		default:
 			break;
@@ -138,7 +159,7 @@ int main(int argc, char** argv)
 
     while (RECEIVED==FALSE) {       		/* loop for input */
       res = read(fd,buf,1);     			/* returns after 1 char has been input */
-	handle_input(&state, buf[0], setup);	/* handle byte received */
+	handle_setup(&state, buf[0], setup);	/* handle byte received */
     }
 	printf("SET received!\n");
     
