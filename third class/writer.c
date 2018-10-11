@@ -15,18 +15,20 @@
 #define TRUE 1
 
 #define FLAG 0x7E
+#define ESCAPE 0x7d
 #define A 0x03
 #define C 0x40
 
 #define C_CONFIRM 0x07
 
-#define DSIZE 11
+#define DSIZE 10
 
 volatile int RECEIVED=FALSE;
 
 
 typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC } State;
 
+void shiftRight();
 /* state machine for handling received bytes */
 void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 	switch(*state) {
@@ -131,19 +133,46 @@ int main(int argc, char** argv)
       perror("tcsetattr");
       exit(-1);
     }
-    printf("New termios structure set\n");
 
+    printf("New termios structure set\n");
 
 	unsigned char setup[255];
 	int i = 0;
 
 	while(i<DSIZE){
-		dados[i]=0x45;
+
+		if(i==5)
+			dados[i]=FLAG;
+		else if(i==8)
+			dados[i]=ESCAPE;
+		else 	dados[i]=0x45;
+
 		bcc2 = bcc2 ^ dados[i];
 		i++;
 	}
 
+	//	check FLAGs in dados				o size aumenta nr de flags que houver
+	
 	i = 0;
+	while(i < DSIZE){
+		if(dados[i] == FLAG){
+			shiftRight(dados, i, DSIZE);
+			dados[i]=ESCAPE;
+			dados[i+1]=0x5e;
+		} else if(dados[i] == ESCAPE){
+			shiftRight(dados, i, DSIZE);
+			dados[i]=ESCAPE;
+			dados[i+1]=0x5d;
+		}
+
+		i++;
+	}
+
+	i = 0;
+	while(i<DSIZE+1){
+		printf("%X\n", dados[i]);
+		i++;
+	}
 
 	State state = INITIAL;
 
@@ -152,10 +181,13 @@ int main(int argc, char** argv)
 	setup[2] = C;
 	setup[3] = setup[1]^setup[2]; //BCC
 
+
+	i = 0;
 	while(i<DSIZE){
 		setup[i+4]=dados[i];
 		i++;
 	}
+
 	setup[DSIZE+4] = bcc2;
 	setup[DSIZE+5] = FLAG;
 
@@ -164,7 +196,7 @@ int main(int argc, char** argv)
 	i = 0;
 
 	while(i<DSIZE+6){
-		printf("%X\n", setup[i]);
+		//printf("%X\n", setup[i]);
 		i++;
 	}
 
@@ -180,8 +212,8 @@ int main(int argc, char** argv)
 	//printf("UA sent!\n");
 	//sleep(2);
     
-   /* 
-    O ciclo WHILE deve ser alterado de modo a respeitar o indicado no guião 
+   /*
+    O ciclo WHILE deve ser alterado de modo a respeitar o indicado no guião
    */
 
 	sleep(2);
@@ -191,3 +223,16 @@ int main(int argc, char** argv)
     close(fd);
     return 0;
 }
+
+void shiftRight(char* buffer, int position, int length){
+	char temp = buffer[position];
+	char temp2;
+	buffer[position]=0;
+	for(int i = position ; i <= length ; i++){
+		temp2 = buffer[i+1];
+		buffer[i+1] = temp;
+		printf("temp: %X %d", temp, i);
+		temp = temp2; 
+	}
+}
+
