@@ -157,7 +157,6 @@ int main(int argc, char** argv)
 		else
 			ua[i] = setup[i];
 	}
-	sleep(7);
 	write(fd,ua,5);
 	printf("UA sent: ");
 	print_arr(ua, 5);
