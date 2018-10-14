@@ -6,23 +6,23 @@
 #include <termios.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <strings.h>
 
-#define BAUDRATE B38400
-#define _POSIX_SOURCE 1 /* POSIX compliant source */
-#define FALSE 0
-#define TRUE 1
+#define BAUDRATE 		B38400
+#define _POSIX_SOURCE 	1 /* POSIX compliant source */
+#define FALSE 			0
+#define TRUE 			1
 
-#define FLAG 0x7E
-#define A 0x01
-#define C 0x03
-#define BCC A^C
+#define FLAG 		0x7E
+#define A_RECEIVED 	0x03
+#define A_CONFIRM	0x01
+#define C 			0x03
+#define C_CONFIRM 	0x07
+#define BCC 		A^C
 
-#define C_CONFIRM 0x07
-
-volatile int RECEIVED=FALSE;
-
+volatile int RECEIVED = FALSE;
 
 typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC } State;
 
@@ -36,8 +36,8 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 			}
 			break;
 		case STATE_FLAG:
-			if (byte == A) {
-				setup[1] = A;
+			if (byte == A_RECEIVED) {
+				setup[1] = A_RECEIVED;
 				*state = STATE_A;
 			} else if (byte == FLAG) {
 				setup[0] = FLAG;
@@ -81,11 +81,17 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 	}
 }
 
+void print_arr(unsigned char arr[], int size) {
+	for (int i = 0; i < size; i++)
+		printf("%x ",  arr[i]);
+	printf("\n");
+}
+
 int main(int argc, char** argv)
 {
     int fd,c, res;
     struct termios oldtio,newtio;
-    unsigned char buf[255];
+    unsigned char buf[255], setup[5], ua[5];
 
     if ((argc < 2) || 
   	     ((strcmp("/dev/ttyS0", argv[1])!=0) && 
@@ -121,7 +127,7 @@ int main(int argc, char** argv)
 
   /* 
     VTIME e VMIN devem ser alterados de forma a proteger com um temporizador a 
-    leitura do(s) próximo(s) caracter(es)
+    leitura do(s) prï¿½ximo(s) caracter(es)
   */
 
     tcflush(fd, TCIOFLUSH);
@@ -132,27 +138,32 @@ int main(int argc, char** argv)
     }
     printf("New termios structure set\n");
 
-
-	unsigned char setup[5];
 	State state = INITIAL;
-
-    while (RECEIVED==FALSE) {       		/* loop for input */
-      res = read(fd,buf,1);     			/* returns after 1 char has been input */
-	handle_input(&state, buf[0], setup);	/* handle byte received */
+    while (RECEIVED == FALSE) {       		/* loop for input */
+      	res = read(fd,buf,1);     			/* returns after 1 char has been input */
+		handle_input(&state, buf[0], setup);	/* handle byte received */
     }
-	printf("SET received!\n");
+	printf("SET received: ");
+	print_arr(setup, 5);
     
 	/* send confirmation */
-	setup[2] = C_CONFIRM;
-	write(fd,setup,5);
-	printf("UA sent!\n");
+	for (int i = 0; i < 5; i++) {
+		if (i == 1)
+			ua[i] = A_CONFIRM;
+		else if (i == 2) 
+			ua[i] = C_CONFIRM;
+		else if (i == 3)
+			ua[i] = ua[1]^ua[2];
+		else
+			ua[i] = setup[i];
+	}
+	sleep(7);
+	write(fd,ua,5);
+	printf("UA sent: ");
+	print_arr(ua, 5);
+
 	sleep(2);
 	
-    
-   /* 
-    O ciclo WHILE deve ser alterado de modo a respeitar o indicado no guião 
-   */
-
     tcsetattr(fd,TCSANOW,&oldtio);
     close(fd);
     return 0;
