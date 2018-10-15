@@ -6,107 +6,119 @@
 #include <termios.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <strings.h>
 
-#define BAUDRATE B38400
-#define _POSIX_SOURCE 1 /* POSIX compliant source */
-#define FALSE 0
-#define TRUE 1
+#define BAUDRATE 	B38400
+#define _POSIX_SOURCE 	1 /* POSIX compliant source */
+#define FALSE 		0
+#define TRUE 		1
 
-#define FLAG 0x7E
-#define A_RECEIVED 0x03
-#define A_SENT 0x01
+#define FLAG 		0x7e
+#define ESCAPE 		0x7d
+#define A_RECEIVED 	0x03
+#define A_CONFIRM	0x01
+#define C_RECEIVED	0x03
+#define C_CONFIRM 	0x07
+#define BCC 		A^C
 
-volatile int RECEIVED=FALSE;
+#define MAX_SIZE	255
 
-unsigned char data[]; 
+volatile int stuffedByte = 0, dataIdx = 4;
 
-unsigned char original_data[];
+volatile int RECEIVED = FALSE;
 
-int i = 0, j = 0;
+typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC , STATE_FINAL } State;
 
-typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC } State;
-
-
-void handle_bytes(State* state, unsigned char byte, unsigned char setup[]) {
+/* state machine for handling received bytes */
+void handle_input(State* state, unsigned char byte, unsigned char frameI[]) {
 	switch(*state) {
 		case INITIAL:
 			if (byte == FLAG) {
-				setup[0] = FLAG;
+				frameI[0] = FLAG;
 				*state = STATE_FLAG;			
 			}
 			break;
 		case STATE_FLAG:
 			if (byte == A_RECEIVED) {
-				setup[1] = A_RECEIVED;
+				frameI[1] = A_RECEIVED;
 				*state = STATE_A;
 			} else if (byte == FLAG) {
-				setup[0] = FLAG;
+				frameI[0] = FLAG;
 				*state = STATE_FLAG;	
 			} else {
 				*state = INITIAL;
 			}
 			break;
 		case STATE_A:
-			if (byte != setup[2]) {
-				*setup[2] = byte;
+			if (byte == C_RECEIVED) {
+				frameI[2] = C_RECEIVED;
 				*state = STATE_C;
 			} else if (byte == FLAG) {
-				setup[0] = FLAG;
+				frameI[0] = FLAG;
 				*state = STATE_FLAG;	
 			} else {
 				*state = INITIAL;
 			}
 			break;
 		case STATE_C:
-			if (byte == setup[1]^setup[2]) {
-				setup[3] = setup[1]^setup[2];
+			if (byte == frameI[1]^frameI[2]) {
+				frameI[3] = frameI[1]^frameI[2];
 				*state = STATE_BCC;
 			} else if (byte == FLAG) {
-				setup[0] = FLAG;
+				frameI[0] = FLAG;
 				*state = STATE_FLAG;	
 			} else {
 				*state = INITIAL;
 			}
 			break;
-		case STATE_BCC1:
-			original_data[j] = malloc(sizeof(unsigned char));
-			original_data[j++] = byte;
-			if (byte == FLAG) {
-				data[i] = malloc(sizeof(unsigned char));
-				data[i++] = 0x7d;
-				data[i] = malloc(sizeof(unsigned char));
-				data[i++] = 0x5e;
-			} else if (byte == 0x7d) {
-				data[i] = malloc(sizeof(unsigned char));
-				data[i++] = 0x7d;
-				data[i] = malloc(sizeof(unsigned char));
-				data[i++] = 0x5d;
-			} else {
-				data[i] = malloc(sizeof(unsigned char));
-				data[i++] = byte;
+		case STATE_BCC:
+			if (byte == ESCAPE) {
+				stuffedByte = 1;
+			} else if (byte == FLAG) {
+				*state = STATE_FINAL;
+			} else if (stuffedByte) {
+				frameI[dataIdx++] = byte ^ 0x20;
+				stuffedByte = 0;			
+			} else { 
+				frameI[dataIdx++] = byte;		
 			}
 			break;
-		case STATE_BCC2:
-			if (byte == FLAG) {
-				setup[i] = FLAG;
-				RECEIVED = TRUE;		
+		case STATE_FINAL: 
+		{
+			unsigned char bcc2 = frameI[4];		
+			
+			int i;
+			for (i = 5; i < dataIdx; i++) {
+				bcc2 ^= frameI[i];
+			}
+
+			if (frameI[dataIdx] == bcc2) {
+				frameI[dataIdx+1] = FLAG;
+				RECEIVED = TRUE;
 			} else {
-				setup[0] = FLAG;
-				*state = INITIAL;
-			} 
+				printf("BCC2 incompatible\n");
+			}
 			break;
+		}
 		default:
 			break;
 	}
+}
+
+void print_arr(unsigned char arr[], int size) {
+	int i;
+	for (i = 0; i < size; i++)
+		printf("%x ",  arr[i]);
+	printf("\n");
 }
 
 int main(int argc, char** argv)
 {
     int fd,c, res;
     struct termios oldtio,newtio;
-    unsigned char buf[255];
+    unsigned char buf[255], frameI[MAX_SIZE];
 
     if ((argc < 2) || 
   	     ((strcmp("/dev/ttyS0", argv[1])!=0) && 
@@ -142,7 +154,7 @@ int main(int argc, char** argv)
 
   /* 
     VTIME e VMIN devem ser alterados de forma a proteger com um temporizador a 
-    leitura do(s) próximo(s) caracter(es)
+    leitura do(s) prï¿½ximo(s) caracter(es)
   */
 
     tcflush(fd, TCIOFLUSH);
@@ -153,27 +165,16 @@ int main(int argc, char** argv)
     }
     printf("New termios structure set\n");
 
-
-	unsigned char setup[5];
-	State state = INITIAL;
-
-    while (RECEIVED==FALSE) {       		/* loop for input */
-      res = read(fd,buf,1);     			/* returns after 1 char has been input */
-	handle_setup(&state, buf[0], setup);	/* handle byte received */
+    State state = INITIAL;
+    while (RECEIVED == FALSE) {       		/* loop for input */
+      	res = read(fd,buf,1);     		/* returns after 1 char has been input */
+	handle_input(&state, buf[0], frameI);	/* handle byte received */
     }
-	printf("SET received!\n");
-    
-	/* send confirmation */
-	setup[2] = C_CONFIRM;
-	write(fd,setup,5);
-	printf("UA sent!\n");
+	printf("RECEIVED FRAME\n");
+	print_arr(frameI, dataIdx+1);
+
 	sleep(2);
 	
-    
-   /* 
-    O ciclo WHILE deve ser alterado de modo a respeitar o indicado no guião 
-   */
-
     tcsetattr(fd,TCSANOW,&oldtio);
     close(fd);
     return 0;
