@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <signal.h>
 
 #define BAUDRATE B38400
 #define _POSIX_SOURCE 1 /* POSIX compliant source */
@@ -23,7 +24,9 @@
 
 #define DSIZE 10
 
-volatile int RECEIVED=FALSE;
+volatile int RECEIVED_UA=FALSE;
+
+int timeout = 0, n_tries = 0;
 
 
 typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC } State;
@@ -73,7 +76,7 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 			break;
 		case STATE_BCC:
 			if (byte == FLAG) {
-				RECEIVED = TRUE;
+				RECEIVED_UA = TRUE;
 				setup[4] = FLAG;			
 			}
 			else
@@ -84,16 +87,28 @@ void handle_input(State* state, unsigned char byte, unsigned char setup[]) {
 	}
 }
 
+void print_arr(unsigned char arr[], int size) {
+	for (int i = 0; i < size; i++)
+		printf("%x ", arr[i]);
+	printf("\n");
+}
+
+/* timeout alarm */
+void timeout_alarm() {
+	timeout = 1;
+}
+
+
 int main(int argc, char** argv)
 {
-    int fd,c, res, bcc2=0x00;
+    int fd, fileD, c, res, bcc2=0x00, ua[5], buf[255];
 	unsigned char dados[DSIZE];
     struct termios oldtio,newtio;
 
-    if ((argc < 2) || 
+    if ((argc < 3) || 
   	     ((strcmp("/dev/ttyS0", argv[1])!=0) && 
   	      (strcmp("/dev/ttyS1", argv[1])!=0) )) {
-      printf("Usage:\tnserial SerialPort\n\tex: nserial /dev/ttyS1\n");
+      printf("Usage:\tnserial SerialPort File\n\tex: nserial /dev/ttyS1 Penguin.gif\n");
       exit(1);
     }
 
@@ -118,8 +133,8 @@ int main(int argc, char** argv)
     /* set input mode (non-canonical, no echo,...) */
     newtio.c_lflag = 0;
 
-    newtio.c_cc[VTIME]    = 0;   /* inter-character timer unused */
-    newtio.c_cc[VMIN]     = 1;   /* blocking read until 1 char is received */
+    newtio.c_cc[VTIME]    = 1;   /* inter-character timer unused */
+    newtio.c_cc[VMIN]     = 0;   /* blocking read until 1 char is received */
 
 
   /* 
@@ -136,14 +151,20 @@ int main(int argc, char** argv)
 
     printf("New termios structure set\n");
 
+
+	fileD = open(argv[2], O_RDONLY);
+    if (fd <0) {perror(argv[2]); exit(-1); }
+
+	printf("File opened\n");
 	unsigned char setup[255];
 	int i = 0;
+	int numShifts = 0;
 
 	while(i<DSIZE){
 
 		if(i==5)
 			dados[i]=FLAG;
-		else if(i==8)
+		else if(i==8 )
 			dados[i]=ESCAPE;
 		else 	dados[i]=0x45;
 
@@ -159,20 +180,19 @@ int main(int argc, char** argv)
 			shiftRight(dados, i, DSIZE);
 			dados[i]=ESCAPE;
 			dados[i+1]=0x5e;
+			numShifts++;
 		} else if(dados[i] == ESCAPE){
 			shiftRight(dados, i, DSIZE);
 			dados[i]=ESCAPE;
 			dados[i+1]=0x5d;
+			numShifts++;
 		}
 
 		i++;
 	}
 
-	i = 0;
-	while(i<DSIZE+1){
-		printf("%X\n", dados[i]);
-		i++;
-	}
+	/* installs alarm handler */
+	(void) signal(SIGALRM, timeout_alarm);
 
 	State state = INITIAL;
 
@@ -183,43 +203,44 @@ int main(int argc, char** argv)
 
 
 	i = 0;
-	while(i<DSIZE){
+	while(i<DSIZE+numShifts){
 		setup[i+4]=dados[i];
 		i++;
 	}
 
-	setup[DSIZE+4] = bcc2;
-	setup[DSIZE+5] = FLAG;
+	setup[DSIZE+4+numShifts] = bcc2;
+	setup[DSIZE+5+numShifts] = FLAG;
 
-	//write(fd,setup,5);
 	
-	i = 0;
 
-	while(i<DSIZE+6){
-		//printf("%X\n", setup[i]);
-		i++;
+	while (!RECEIVED_UA && n_tries < 3) {
+
+		/* writes SET to serial port */
+		write(fd,setup,DSIZE+6+numShifts);
+		printf("SET sent: ");
+		print_arr(setup, DSIZE+6+numShifts);
+		alarm(3);
+
+		while (!timeout) {  	
+
+			if (RECEIVED_UA) {
+				printf("UA received: ");
+				print_arr(ua, 5);
+				break;
+			}
+
+			res = read(fd,buf,1);     			
+			handle_input(&state, buf[0], ua);
+    	}
+
+		timeout = 0;
+		n_tries++;
 	}
-
-   // while (RECEIVED==FALSE) {       		/* loop for input */
-  //    res = read(fd,buf,1);     			/* returns after 1 char has been input */
-	//  handle_input(&state, buf[0], setup);	/* handle byte received */
-    //}
-	//printf("SET received!\n");
-   
-	/* send confirmation */
-	//setup[2] = C_CONFIRM;
-	//write(fd,setup,5);
-	//printf("UA sent!\n");
-	//sleep(2);
-    
-   /*
-    O ciclo WHILE deve ser alterado de modo a respeitar o indicado no guião
-   */
-
-	sleep(2);
 
     tcsetattr(fd,TCSANOW,&oldtio);
 
+
+	close(fileD);
     close(fd);
     return 0;
 }
@@ -231,8 +252,6 @@ void shiftRight(char* buffer, int position, int length){
 	for(int i = position ; i <= length ; i++){
 		temp2 = buffer[i+1];
 		buffer[i+1] = temp;
-		printf("temp: %X %d", temp, i);
 		temp = temp2; 
 	}
 }
-
