@@ -112,48 +112,6 @@ void timeout_alarm()
   timeout = 1;
 }
 
-
-int llopen(int fd, int flag)
-{
-  unsigned char ua[5], setup[5], buf[255];
-
-  /* installs alarm handler */
-	(void) signal(SIGALRM, timeout_alarm);
-
-	State state = INITIAL;
-
-	setup[0] = FLAG;
-	setup[1] = A;
-	setup[2] = C;
-	setup[3] = setup[1]^setup[2]; //BCC
-
-  while (!RECEIVED_UA && n_tries < 3) {
-
-		/* writes SET to serial port */
-		write(fd,setup,5);
-		printf("SET sent: ");
-		print_arr(setup, 5);
-		alarm(3);
-
-		while (!timeout) {
-
-			if (RECEIVED_UA) {
-				printf("UA received: ");
-				print_arr(ua, 5);
-				break;
-			}
-
-			read(fd,buf,1);
-			handle_setup(&state, buf[0], ua);
-    }
-
-		timeout = 0;
-		n_tries++;
-	}
-
-  return 0;
-}
-
 int llwrite(int fd, char* buffer, int length)
 {
     unsigned char dados[DSIZE];
@@ -212,6 +170,46 @@ int llwrite(int fd, char* buffer, int length)
     return 0;
 }
 
+int llopen(int fd, int flag)
+{
+  unsigned char ua[5], setup[5], buf[255];
+
+  /* installs alarm handler */
+	(void) signal(SIGALRM, timeout_alarm);
+
+	State state = INITIAL;
+
+	setup[0] = FLAG;
+	setup[1] = A;
+	setup[2] = C;
+	setup[3] = setup[1]^setup[2]; //BCC
+
+  while (!RECEIVED_UA && n_tries < 3) {
+
+		/* writes SET to serial port */
+		write(fd,setup,5);
+		printf("SET sent: ");
+		print_arr(setup, 5);
+		alarm(3);
+
+		while (!timeout) {
+
+			if (RECEIVED_UA) {
+				printf("UA received: ");
+				print_arr(ua, 5);
+				break;
+			}
+
+			read(fd,buf,1);
+			handle_setup(&state, buf[0], ua);
+    }
+
+		timeout = 0;
+		n_tries++;
+	}
+
+  return 0;
+}
 
 int main(int argc, char** argv)
 {

@@ -21,68 +21,80 @@
 #define C_CONFIRM 	  0x07
 #define BCC 		      A^C
 
+#define DSIZE     10
 #define MAX_SIZE	255
 
 volatile int stuffedByte = 0, dataIdx = 4;
 
 volatile int RECEIVED = FALSE;
 
-typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC , STATE_FINAL } State;
+typedef enum {
+  INITIAL,
+  STATE_FLAG,
+  STATE_A,
+  STATE_C,
+  STATE_BCC,
+  STATE_DATA,
+  STATE_BCC2
+} State;
+
 /* state machine for handling received bytes */
 void handle_setup(State* state, unsigned char byte, unsigned char setup[]) {
-	switch(*state) {
-		case INITIAL:
-			if (byte == FLAG) {
-				setup[0] = FLAG;
-				*state = STATE_FLAG;
-			}
-			break;
-		case STATE_FLAG:
-			if (byte == A_RECEIVED) {
-				setup[1] = A_RECEIVED;
-				*state = STATE_A;
-			} else if (byte == FLAG) {
-				setup[0] = FLAG;
-				*state = STATE_FLAG;
-			} else {
-				*state = INITIAL;
-			}
-			break;
-		case STATE_A:
-			if (byte == C_RECEIVED) {
-				setup[2] = C_RECEIVED;
-				*state = STATE_C;
-			} else if (byte == FLAG) {
-				setup[0] = FLAG;
-				*state = STATE_FLAG;
-			} else {
-				*state = INITIAL;
-			}
-			break;
-		case STATE_C:
-			if (byte == setup[1]^setup[2]) {
-				setup[3] = setup[1]^setup[2];
-				*state = STATE_BCC;
-			} else if (byte == FLAG) {
-				setup[0] = FLAG;
-				*state = STATE_FLAG;
-			} else {
-				*state = INITIAL;
-			}
-			break;
-		case STATE_BCC:
-			if (byte == FLAG) {
-				RECEIVED = TRUE;
-				setup[4] = FLAG;
-			}
-			else
-				*state = INITIAL;
-			break;
-		default:
-			break;
-	}
+  switch(*state) {
+    case INITIAL:
+    if (byte == FLAG) {
+      setup[0] = FLAG;
+      *state = STATE_FLAG;
+    }
+    break;
+    case STATE_FLAG:
+    if (byte == A_RECEIVED) {
+      setup[1] = A_RECEIVED;
+      *state = STATE_A;
+    } else if (byte == FLAG) {
+      setup[0] = FLAG;
+      *state = STATE_FLAG;
+    } else {
+      *state = INITIAL;
+    }
+    break;
+    case STATE_A:
+    if (byte == C_RECEIVED) {
+      setup[2] = C_RECEIVED;
+      *state = STATE_C;
+    } else if (byte == FLAG) {
+      setup[0] = FLAG;
+      *state = STATE_FLAG;
+    } else {
+      *state = INITIAL;
+    }
+    break;
+    case STATE_C:
+    if (byte == setup[1]^setup[2]) {
+      setup[3] = setup[1]^setup[2];
+      *state = STATE_BCC;
+    } else if (byte == FLAG) {
+      setup[0] = FLAG;
+      *state = STATE_FLAG;
+    } else {
+      *state = INITIAL;
+    }
+    break;
+    case STATE_BCC:
+    if (byte == FLAG) {
+      setup[4] = FLAG;
+      RECEIVED = TRUE;
+    }
+    else {
+      *state = INITIAL;
+    }
+    break;
+    default:
+    break;
+  }
 }
 
+int nrBytes = 0;
 void handle_frame(State* state, unsigned char byte, unsigned char frameI[]) {
   switch(*state) {
     case INITIAL:
@@ -132,9 +144,14 @@ void handle_frame(State* state, unsigned char byte, unsigned char frameI[]) {
       stuffedByte = 0;
     } else {
       frameI[dataIdx++] = byte;
+      nrBytes++;
+    }
+    if (nrBytes == D_SIZE) {
+      nrBytes = 0;
+      *state = STATE_DATA;
     }
     break;
-    case STATE_FINAL:
+    case STATE_DATA:
     {
       unsigned char bcc2 = frameI[4];
 
@@ -143,14 +160,24 @@ void handle_frame(State* state, unsigned char byte, unsigned char frameI[]) {
         bcc2 ^= frameI[i];
       }
 
-      if (frameI[dataIdx] == bcc2) {
-        frameI[dataIdx+1] = FLAG;
+      if (byte == bcc2) {
+        frameI[dataIdx++] = byte;
+        *state = STATE_BCC2;
+      } else {
+        *state = INITIAL;
+      }
+    }
+    break;
+    case STATE_BCC2:
+    {
+      if (byte == FLAG) {
+        frameI[dataIdx] = FLAG;
         RECEIVED = TRUE;
       } else {
-        printf("BCC2 incompatible\n");
+        *state = INITIAL;
       }
-      break;
     }
+    break;
     default:
     break;
   }
@@ -161,6 +188,18 @@ void print_arr(unsigned char arr[], int size) {
   for (i = 0; i < size; i++)
   printf("%x ",  arr[i]);
   printf("\n");
+}
+
+int llread(int fd, char* buffer)
+{
+  int read = 0;
+  unsigned char setup[5], frame[MAX_SIZE];
+
+  State state = INITIAL;
+  while (RECEIVED == FALSE) {
+    read += read(fd,buffer,1);     			      /* returns after 1 char has been input */
+    handle_setup(&state, buf[0], setup);	   /* handle byte received */
+  }
 }
 
 int llopen(int fd, int flag)
@@ -192,16 +231,10 @@ int llopen(int fd, int flag)
   print_arr(ua, 5);
 }
 
-int llwrite(int fd, char* buffer, int length)
-{
-
-}
-
 int main(int argc, char** argv)
 {
   int fd,c, res;
   struct termios oldtio,newtio;
-  unsigned char buf[255], frameI[MAX_SIZE];
 
   if ((argc < 2) ||
   ((strcmp("/dev/ttyS0", argv[1])!=0) &&
