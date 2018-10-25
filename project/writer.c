@@ -1,100 +1,105 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <signal.h>
+#include "writer.h"
 
-#define BAUDRATE      B38400
-#define _POSIX_SOURCE 1 /* POSIX compliant source */
-#define FALSE         0
-#define TRUE          1
+int RECEIVED = FALSE;
+int timeout = 0;
+struct termios oldtio, newtio;
 
-#define TRIES         3
+unsigned char c;
 
-#define FLAG          0x7E
-#define ESCAPE        0x7d
-#define A             0x03
-#define C             0x40
-#define C_DISC        0x0B
-
-#define C_UA          0x07
-
-#define DSIZE     10
-
-volatile int RECEIVED = FALSE;
-
-int timeout = 0, n_tries = 0;
-
-typedef enum { INITIAL, STATE_FLAG, STATE_A, STATE_C, STATE_BCC } State;
 /* state machine for handling received bytes */
-void handle_setup(State* state, unsigned char byte, unsigned char setup[]) {
-  switch(*state) {
-    case INITIAL:
-    if (byte == FLAG) {
+typedef enum
+{
+  INITIAL,
+  STATE_FLAG,
+  STATE_A,
+  STATE_C,
+  STATE_BCC
+} State;
+
+void handle_control(State *state, unsigned char byte, unsigned char setup[])
+{
+  switch (*state)
+  {
+  case INITIAL:
+    if (byte == FLAG)
+    {
       setup[0] = FLAG;
       *state = STATE_FLAG;
     }
     break;
-    case STATE_FLAG:
-    if (byte == A) {
-      setup[1] = A;
+  case STATE_FLAG:
+    if (byte == A_TRANSMITTER)
+    {
+      setup[1] = A_TRANSMITTER;
       *state = STATE_A;
-    } else if (byte == FLAG) {
+    }
+    else if (byte == FLAG)
+    {
       setup[0] = FLAG;
       *state = STATE_FLAG;
-    } else {
+    }
+    else
+    {
       *state = INITIAL;
     }
     break;
-    case STATE_A:
-    if (byte == C) {
-      setup[2] = C;
+  case STATE_A:
+    if (byte == c)
+    {
+      setup[2] = c;
       *state = STATE_C;
-    } else if (byte == FLAG) {
+    }
+    else if (byte == FLAG)
+    {
       setup[0] = FLAG;
       *state = STATE_FLAG;
-    } else {
+    }
+    else
+    {
       *state = INITIAL;
     }
     break;
-    case STATE_C:
-    if (byte == setup[1]^setup[2]) {
-      setup[3] = setup[1]^setup[2];
+  case STATE_C:
+    if (byte == setup[1] ^ setup[2])
+    {
+      setup[3] = setup[1] ^ setup[2];
       *state = STATE_BCC;
-    } else if (byte == FLAG) {
+    }
+    else if (byte == FLAG)
+    {
       setup[0] = FLAG;
       *state = STATE_FLAG;
-    } else {
+    }
+    else
+    {
       *state = INITIAL;
     }
     break;
-    case STATE_BCC:
-    if (byte == FLAG) {
+  case STATE_BCC:
+    if (byte == FLAG)
+    {
       RECEIVED = TRUE;
       setup[4] = FLAG;
     }
     else
-    *state = INITIAL;
+      *state = INITIAL;
     break;
-    default:
+  default:
     break;
   }
 }
 
-void shiftRight(char* buffer, int position, int length)
+void shiftRight(char *buffer, int position, int length)
 {
   char temp = buffer[position];
   char temp2;
-  buffer[position]=0;
+  buffer[position] = 0;
 
   int i;
-  for(i = position ; i <= length ; i++){
-    temp2 = buffer[i+1];
-    buffer[i+1] = temp;
+  for (i = position; i <= length; i++)
+  {
+    temp2 = buffer[i + 1];
+    buffer[i + 1] = temp;
     temp = temp2;
   }
 }
@@ -103,7 +108,7 @@ void print_arr(unsigned char arr[], int size)
 {
   int i;
   for (i = 0; i < size; i++)
-  printf("%x ", arr[i]);
+    printf("%x ", arr[i]);
   printf("\n");
 }
 
@@ -113,7 +118,7 @@ void timeout_alarm()
   timeout = 1;
 }
 
-int llwrite(int fd, char* buffer, int length)
+int llwrite(int fd, char *buffer, int length)
 {
   unsigned char dados[DSIZE];
 
@@ -168,146 +173,16 @@ setup[DSIZE+5+numShifts] = FLAG;
 
 close(fileD)*/
 
-return 0;
+  return 0;
 }
 
-int llopen(char* port, int flag)
+int llopen(int fd)
 {
-  int n_tries = 0;
-
   unsigned char ua[5], setup[5], buf[255];
 
-  /*
-  Open serial port device for reading and writing and not as controlling tty
-  because we don't want to get killed if linenoise sends CTRL-C.
-  */
-  int fd = open(port, O_RDWR | O_NOCTTY);
-  if (fd < 0) { perror(port); exit(-1); }
-
-  /* installs alarm handler */
-  (void) signal(SIGALRM, timeout_alarm);
-
-  State state = INITIAL;
-
-  setup[0] = FLAG;
-  setup[1] = A;
-  setup[2] = C;
-  setup[3] = setup[1]^setup[2]; //BCC
-
-  while (!RECEIVED && n_tries < TRIES) {
-
-    /* writes SET to serial port */
-    write(fd,setup,5);
-    printf("SET sent: ");
-    print_arr(setup, 5);
-    alarm(3);
-
-    while (!timeout) {
-
-      if (RECEIVED_UA) {
-        printf("UA received: ");
-        print_arr(ua, 5);
-        break;
-      }
-
-      read(fd,buf,1);
-      handle_setup(&state, buf[0], ua);
-    }
-
-    timeout = 0;
-    n_tries++;
-  }
-
-  return fd;
-}
-
-int llclose(int fd)
-{
-  RECEIVED = FALSE;
-
-  int n_tries = 0;
-
-  unsigned char ua[5], disc[5], buf[255];
-
-  /* installs alarm handler */
-  (void) signal(SIGALRM, timeout_alarm);
-
-  State state = INITIAL;
-
-  disc[0] = FLAG;
-  disc[1] = A;
-  disc[2] = C_DISC;
-  disc[3] = disc[1]^disc[2]; //BCC
-
-  while (!RECEIVED && n_tries < TRIES) {
-
-    /* writes SET to serial port */
-    write(fd,disc,5);
-    printf("DISC sent: ");
-    print_arr(disc, 5);
-    alarm(3);
-
-    while (!timeout) {
-
-      if (RECEIVED) {
-        printf("DISC received: ");
-        print_arr(disc, 5);
-        break;
-      }
-
-      read(fd,buf,1);
-      handle_setup(&state, buf[0], disc);
-    }
-
-    timeout = 0;
-    n_tries++;
-  }
-
-  ua[0] = FLAG;
-  ua[1] = A;
-  ua[2] = C_UA;
-  ua[3] = ua[1]^ua[2];
-
-  write(fd,ua,5);
-
-  close(fd);
-}
-
-FILE* openfile(char* filepath)
-{
-  FILE* img = fopen(filepath, "r");
-  if (img == NULL) {
-    perror("Could not read file!\n");
-    return NULL;
-  }
-
-  return img;
-}
-
-int writefile(int fd, FILE* file)
-{
-   while (!feof(img)) {
-    char c = fgetc(img);
-    write(fd,c,1);
-    printf("%c",c);
-  }
-}
-
-int main(int argc, char** argv)
-{
-  struct termios oldtio, newtio;
-
-  if ((argc < 3) ||
-  ((strcmp("/dev/ttyS0", argv[1])!=0) &&
-  (strcmp("/dev/ttyS1", argv[1])!=0) )) {
-    printf("Usage:\tnserial SerialPort File\n\tex: nserial /dev/ttyS1 Penguin.gif\n");
-    exit(1);
-  }
-
-  int fd = llopen(argv[1], 1);
-
-  if (tcgetattr(fd,&oldtio) == -1) { /* save current port settings */
-    perror("tcgetattr");
+  if (tcgetattr(fd, &oldtio) == -1)
+  { /* save current port settings */
+    perror("llopen - tcgetattr error!");
     exit(-1);
   }
 
@@ -323,26 +198,198 @@ int main(int argc, char** argv)
   VTIME e VMIN devem ser alterados de forma a proteger com um temporizador a
   leitura do(s) próximo(s) caracter(es)
   */
-  newtio.c_cc[VTIME]    = 1;   /* inter-character timer unused */
-  newtio.c_cc[VMIN]     = 0;   /* blocking read until 1 char is received */
+  newtio.c_cc[VTIME] = 1; /* inter-character timer unused */
+  newtio.c_cc[VMIN] = 0;  /* blocking read until 1 char is received */
 
   tcflush(fd, TCIOFLUSH);
 
-  if (tcsetattr(fd,TCSANOW,&newtio) == -1) {
-    perror("tcsetattr");
+  if (tcsetattr(fd, TCSANOW, &newtio) == -1)
+  {
+    perror("llopen - tcsetattr error!");
     exit(-1);
   }
-  printf("New termios structure set\n");
+  printf("llopen: new termios structure set\n");
 
-  FILE* file = openfile("penguin.gif");
+  State state = INITIAL;
+  setup[0] = FLAG;
+  setup[1] = A_TRANSMITTER;
+  setup[2] = C_SET;
+  setup[3] = setup[1] ^ setup[2]; //BCC
+  setup[4] = FLAG;
+
+  int n_tries = 0;
+  c = C_UA;
+  RECEIVED = FALSE;
+  while (!RECEIVED && n_tries < TRIES)
+  {
+    // writes SET to serial port
+    write(fd, setup, 5);
+    printf("llopen - SET sent: ");
+    print_arr(setup, 5);
+
+    alarm(TIMEOUT);
+
+    while (!timeout)
+    {
+      if (RECEIVED)
+      {
+        printf("llopen - UA received: ");
+        print_arr(ua, 5);
+        return fd;
+      }
+
+      read(fd, buf, 1);
+      handle_control(&state, buf[0], ua);
+    }
+
+    alarm(0);
+
+    timeout = 0;
+    n_tries++;
+  }
+
+  return -1;
+}
+
+int llclose(int fd)
+{
+  unsigned char ua[5], disc[5], buf[255];
+
+  State state = INITIAL;
+  disc[0] = FLAG;
+  disc[1] = A_TRANSMITTER;
+  disc[2] = C_DISC;
+  disc[3] = disc[1] ^ disc[2]; //BCC
+
+  int n_tries = 0;
+  c = C_DISC;
+  RECEIVED = FALSE;
+  while (!RECEIVED && n_tries < TRIES)
+  {
+    /* writes SET to serial port */
+    write(fd, disc, 5);
+    printf("llclose - DISC sent: ");
+    print_arr(disc, 5);
+
+    alarm(TIMEOUT);
+
+    while (!timeout)
+    {
+      if (RECEIVED)
+      {
+        printf("llclose - DISC received: ");
+        print_arr(disc, 5);
+        break;
+      }
+
+      read(fd, buf, 1);
+      handle_control(&state, buf[0], disc);
+    }
+
+    alarm(0);
+
+    timeout = 0;
+    n_tries++;
+  }
+
+  ua[0] = FLAG;
+  ua[1] = A_TRANSMITTER;
+  ua[2] = C_UA;
+  ua[3] = ua[1] ^ ua[2];
+
+  write(fd, ua, 5);
+  printf("llclose - UA sent: ");
+  print_arr(ua, 5);
+
+  tcsetattr(fd, TCSANOW, &oldtio);
+
+  if (close(fd) == -1)
+  {
+    return -1;
+  }
+  else
+  {
+    return 1;
+  }
+}
+
+int createPacket()
+{
+  char *packet;
+}
+
+int startTransmission(FILE *file)
+{
+  createPacket();
+}
+
+/*
+int writefile(int fd, FILE *file)
+{
+  while (!feof(img))
+  {
+    char c = fgetc(img);
+    write(fd, c, 1);
+    printf("%c", c);
+  }
+}*/
+
+FILE *openfile(char *filepath)
+{
+  FILE *img = fopen(filepath, "r");
+  if (img == NULL)
+  {
+    printf("openfile: could not read file!\n");
+    return NULL;
+  }
+
+  return img;
+}
+
+int main(int argc, char **argv)
+{
+  if ((argc < 3) ||
+      ((strcmp("/dev/ttyS0", argv[1]) != 0) &&
+       (strcmp("/dev/ttyS1", argv[1]) != 0)))
+  {
+    printf("Usage:\tnserial SerialPort File\n\tex: nserial /dev/ttyS1 Penguin.gif\n");
+    exit(1);
+  }
+
+  /*
+  Open serial port device for reading and writing and not as controlling tty
+  because we don't want to get killed if linenoise sends CTRL-C.
+  */
+  int fd = open(argv[1], O_RDWR | O_NOCTTY);
+  if (fd < 0)
+  {
+    perror(argv[1]);
+    exit(-1);
+  }
+
+  // installs alarm handler
+  (void)signal(SIGALRM, timeout_alarm);
+
+  // open connection
+  if (llopen(fd) == -1)
+  {
+    printf("llopen: failed to open connection!");
+    return -1;
+  }
+
+  /* opens file to transmit
+  FILE *file = openfile(argv[2]);
   if (file != NULL)
-    writefile(fd,file);
+  {
+    //startTransmission(fd, file);
+  }*/
 
-  sleep(2);
-
-  llclose(fd);
-
-  tcsetattr(fd,TCSANOW,&oldtio);
+  // close connection
+  if (llclose(fd) == -1)
+  {
+    printf("llclose: failed to close connection!");
+    return -1;
+  }
 
   return 0;
 }
