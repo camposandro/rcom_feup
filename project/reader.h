@@ -23,5 +23,5 @@
 #define C_DISC   	    0x0B
 #define C_UA            0x07
 
+#define MAX_SIZE	  255
 #define DSIZE           10
-#define MAX_SIZE	    255

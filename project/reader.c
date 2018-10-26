@@ -235,6 +235,23 @@ void print_arr(unsigned char arr[], int size)
   printf("\n");
 }
 
+int receivefile(int fd)
+{
+  int readBytes;
+
+  FILE* file = fopen("penguin2.gif", "a"); 
+
+  char* buf = (char *) malloc(MAX_SIZE);
+
+  while ((readBytes = read(fd, buf, MAX_SIZE)) > 0) {
+    fwrite(buf, sizeof(char), readBytes, file);
+  }
+
+  fclose(file);
+
+  return 1;
+}
+
 int llclose(int fd)
 {
   unsigned char ua[5], disc[5], buf[255];
@@ -353,6 +370,8 @@ int main(int argc, char **argv)
 
   // open connection
   llopen(fd);
+
+  receivefile(fd);
 
   // close connection
   llclose(fd);

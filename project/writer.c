@@ -302,26 +302,42 @@ int llclose(int fd)
   }
 }
 
-int createPacket()
+int sendfile(Application *app)
 {
-  char *packet;
-}
+  time_t start, end;
+  int readBytes;
 
-int startTransmission(FILE *file)
-{
-  createPacket();
-}
-
-FILE *openfile(char *filepath)
-{
-  FILE *img = fopen(filepath, "r");
-  if (img == NULL)
+  // open file
+  FILE *file = fopen(app->filepath, "rb");
+  if (file == NULL)
   {
     printf("openfile: could not read file!\n");
-    return NULL;
+    return -1;
   }
 
-  return img;
+  // allocate array to send data
+  char *fileArr = (char *)malloc(MAX_SIZE);
+
+  time(&start);
+  while ((readBytes = fread(fileArr, sizeof(char), MAX_SIZE, file)) > 0)
+  {
+    write(app->fd, fileArr, readBytes);
+  }
+  time(&end);
+
+  double elapsed = difftime(end, start);
+  printf("# File transfered in %.2f seconds!\n", elapsed);
+
+  free(fileArr);
+
+  // close file
+  if (fclose(file) == -1)
+  {
+    printf("closefile: could not close file!\n");
+    return -1;
+  }
+
+  return 1;
 }
 
 void installAlarm()
@@ -352,36 +368,37 @@ int main(int argc, char **argv)
     exit(1);
   }
 
+  Application *app = (Application *)malloc(sizeof(Application));
+
   /*
   Open serial port device for reading and writing and not as controlling tty
   because we don't want to get killed if linenoise sends CTRL-C.
   */
-  int fd = open(argv[1], O_RDWR | O_NOCTTY);
-  if (fd < 0)
+  app->fd = open(argv[1], O_RDWR | O_NOCTTY);
+  if (app->fd < 0)
   {
     perror(argv[1]);
     exit(-1);
   }
 
-  // installs alarm handler
+  // store file path
+  app->filepath = argv[2];
+
+  // install alarm handler
   installAlarm();
 
   // open connection
-  if (llopen(fd) == -1)
+  if (llopen(app->fd) == -1)
   {
     printf("llopen: failed to open connection!\n");
     return -1;
   }
 
   // opens file to transmit
-  FILE *file = openfile(argv[2]);
-  if (file != NULL)
-  {
-    //startTransmission(fd, file);
-  }
+  sendfile(app);
 
   // close connection
-  if (llclose(fd) == -1)
+  if (llclose(app->fd) == -1)
   {
     printf("llclose: failed to close connection!\n");
     return -1;
@@ -391,14 +408,3 @@ int main(int argc, char **argv)
 
   return 0;
 }
-
-/*
-int writefile(int fd, FILE *file)
-{
-  while (!feof(img))
-  {
-    char c = fgetc(img);
-    write(fd, c, 1);
-    printf("%c", c);
-  }
-}*/

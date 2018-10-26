@@ -8,6 +8,7 @@
 #include <string.h>
 #include <strings.h>
 #include <signal.h>
+#include <time.h>
 
 #define BAUDRATE      B38400
 #define _POSIX_SOURCE 1 /* POSIX compliant source */
@@ -26,6 +27,10 @@
 #define C_DISC        0x0B
 #define C_UA          0x07
 
+#define MAX_SIZE	  255
 #define DSIZE         10
 
-#define FILEPATH      "penguin.gif"
+typedef struct {
+    int fd;         // serial port descriptor
+    char* filepath; // path of file to be sent
+} Application;
