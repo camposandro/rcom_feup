@@ -19,26 +19,26 @@ typedef enum
 } State;
 
 /* state machine for handling received bytes */
-void handle_control(State *state, unsigned char byte, unsigned char setup[])
+void handle_control(State *state, unsigned char byte, unsigned char control[])
 {
   switch (*state)
   {
   case INITIAL:
     if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     break;
   case STATE_FLAG:
     if (byte == A_TRANSMITTER)
     {
-      setup[1] = A_TRANSMITTER;
+      control[1] = A_TRANSMITTER;
       *state = STATE_A;
     }
     else if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     else
@@ -49,12 +49,12 @@ void handle_control(State *state, unsigned char byte, unsigned char setup[])
   case STATE_A:
     if (byte == c)
     {
-      setup[2] = c;
+      control[2] = c;
       *state = STATE_C;
     }
     else if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     else
@@ -63,14 +63,14 @@ void handle_control(State *state, unsigned char byte, unsigned char setup[])
     }
     break;
   case STATE_C:
-    if (byte == setup[1] ^ setup[2])
+    if (byte == control[1] ^ control[2])
     {
-      setup[3] = setup[1] ^ setup[2];
+      control[3] = control[1] ^ control[2];
       *state = STATE_BCC;
     }
     else if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     else
@@ -81,7 +81,7 @@ void handle_control(State *state, unsigned char byte, unsigned char setup[])
   case STATE_BCC:
     if (byte == FLAG)
     {
-      setup[4] = FLAG;
+      control[4] = FLAG;
       RECEIVED = TRUE;
     }
     else

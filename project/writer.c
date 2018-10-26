@@ -16,26 +16,26 @@ typedef enum
   STATE_BCC
 } State;
 
-void handle_control(State *state, unsigned char byte, unsigned char setup[])
+void handle_control(State *state, unsigned char byte, unsigned char control[])
 {
   switch (*state)
   {
   case INITIAL:
     if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     break;
   case STATE_FLAG:
     if (byte == A_TRANSMITTER)
     {
-      setup[1] = A_TRANSMITTER;
+      control[1] = A_TRANSMITTER;
       *state = STATE_A;
     }
     else if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     else
@@ -46,12 +46,12 @@ void handle_control(State *state, unsigned char byte, unsigned char setup[])
   case STATE_A:
     if (byte == c)
     {
-      setup[2] = c;
+      control[2] = c;
       *state = STATE_C;
     }
     else if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     else
@@ -60,14 +60,14 @@ void handle_control(State *state, unsigned char byte, unsigned char setup[])
     }
     break;
   case STATE_C:
-    if (byte == setup[1] ^ setup[2])
+    if (byte == control[1] ^ control[2])
     {
-      setup[3] = setup[1] ^ setup[2];
+      control[3] = control[1] ^ control[2];
       *state = STATE_BCC;
     }
     else if (byte == FLAG)
     {
-      setup[0] = FLAG;
+      control[0] = FLAG;
       *state = STATE_FLAG;
     }
     else
@@ -79,7 +79,7 @@ void handle_control(State *state, unsigned char byte, unsigned char setup[])
     if (byte == FLAG)
     {
       RECEIVED = TRUE;
-      setup[4] = FLAG;
+      control[4] = FLAG;
     }
     else
       *state = INITIAL;
@@ -113,67 +113,51 @@ void print_arr(unsigned char arr[], int size)
 }
 
 /* timeout alarm */
-void timeout_alarm()
+void timeout_handler(int signal)
 {
-  timeout = 1;
+  if (signal == SIGALRM)
+    timeout = 1;
 }
 
 int llwrite(int fd, char *buffer, int length)
 {
-  unsigned char dados[DSIZE];
-
-  /*fileD = open(argv[2], O_RDONLY);
-  if (fd <0) {perror(argv[2]); exit(-1); }
-
-  printf("File opened\n");
-  unsigned char setup[255];
-  int i = 0;
+  /*unsigned char dados[DSIZE], setup[255];
   int numShifts = 0;
 
-  while(i<DSIZE){
+  int i = 0;
+  while (i < DSIZE)
+  {
+    if (buffer[i] == FLAG)
+    {
+      shiftRight(buffer, i, DSIZE);
+      buffer[i] = ESCAPE;
+      buffer[i + 1] = 0x5e;
+      numShifts++;
+    }
+    else if (buffer[i] == ESCAPE)
+    {
+      shiftRight(buffer, i, DSIZE);
+      buffer[i] = ESCAPE;
+      buffer[i + 1] = 0x5d;
+      numShifts++;
+    }
 
-  if(i==5)
-  dados[i]=FLAG;
-  else if(i==8 )
-  dados[i]=ESCAPE;
-  else 	dados[i]=0x45;
+    i++;
+  }
 
-  bcc2 = bcc2 ^ dados[i];
-  i++;
-}
+  i = 0;
+  while (i < DSIZE + numShifts)
+  {
+    setup[i + 4] = dados[i];
+    i++;
+  }
 
-//	check FLAGs in dados				o size aumenta nr de flags que houver
+  setup[DSIZE + 4 + numShifts] = bcc2;
+  setup[DSIZE + 5 + numShifts] = FLAG;
 
-i = 0;
-while(i < DSIZE){
-if(dados[i] == FLAG){
-shiftRight(dados, i, DSIZE);
-dados[i]=ESCAPE;
-dados[i+1]=0x5e;
-numShifts++;
-} else if(dados[i] == ESCAPE){
-shiftRight(dados, i, DSIZE);
-dados[i]=ESCAPE;
-dados[i+1]=0x5d;
-numShifts++;
-}
+  close(fileD);
 
-i++;
-}
-
-
-i = 0;
-while(i<DSIZE+numShifts){
-setup[i+4]=dados[i];
-i++;
-}
-
-setup[DSIZE+4+numShifts] = bcc2;
-setup[DSIZE+5+numShifts] = FLAG;
-
-close(fileD)*/
-
-  return 0;
+  return 0;*/
 }
 
 int llopen(int fd)
@@ -182,7 +166,7 @@ int llopen(int fd)
 
   if (tcgetattr(fd, &oldtio) == -1)
   { /* save current port settings */
-    perror("llopen - tcgetattr error!");
+    perror("llopen - tcgetattr error!\n");
     exit(-1);
   }
 
@@ -205,7 +189,7 @@ int llopen(int fd)
 
   if (tcsetattr(fd, TCSANOW, &newtio) == -1)
   {
-    perror("llopen - tcsetattr error!");
+    perror("llopen - tcsetattr error!\n");
     exit(-1);
   }
   printf("llopen: new termios structure set\n");
@@ -260,6 +244,7 @@ int llclose(int fd)
   disc[1] = A_TRANSMITTER;
   disc[2] = C_DISC;
   disc[3] = disc[1] ^ disc[2]; //BCC
+  disc[4] = FLAG;
 
   int n_tries = 0;
   c = C_DISC;
@@ -292,14 +277,18 @@ int llclose(int fd)
     n_tries++;
   }
 
-  ua[0] = FLAG;
-  ua[1] = A_TRANSMITTER;
-  ua[2] = C_UA;
-  ua[3] = ua[1] ^ ua[2];
+  if (RECEIVED)
+  {
+    ua[0] = FLAG;
+    ua[1] = A_TRANSMITTER;
+    ua[2] = C_UA;
+    ua[3] = ua[1] ^ ua[2];
+    ua[4] = FLAG;
 
-  write(fd, ua, 5);
-  printf("llclose - UA sent: ");
-  print_arr(ua, 5);
+    write(fd, ua, 5);
+    printf("llclose - UA sent: ");
+    print_arr(ua, 5);
+  }
 
   tcsetattr(fd, TCSANOW, &oldtio);
 
@@ -323,17 +312,6 @@ int startTransmission(FILE *file)
   createPacket();
 }
 
-/*
-int writefile(int fd, FILE *file)
-{
-  while (!feof(img))
-  {
-    char c = fgetc(img);
-    write(fd, c, 1);
-    printf("%c", c);
-  }
-}*/
-
 FILE *openfile(char *filepath)
 {
   FILE *img = fopen(filepath, "r");
@@ -344,6 +322,24 @@ FILE *openfile(char *filepath)
   }
 
   return img;
+}
+
+void installAlarm()
+{
+  struct sigaction action;
+  action.sa_handler = timeout_handler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+  sigaction(SIGALRM, &action, NULL);
+}
+
+void uninstallAlarm()
+{
+  struct sigaction action;
+  action.sa_handler = NULL;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+  sigaction(SIGALRM, &action, NULL);
 }
 
 int main(int argc, char **argv)
@@ -368,28 +364,41 @@ int main(int argc, char **argv)
   }
 
   // installs alarm handler
-  (void)signal(SIGALRM, timeout_alarm);
+  installAlarm();
 
   // open connection
   if (llopen(fd) == -1)
   {
-    printf("llopen: failed to open connection!");
+    printf("llopen: failed to open connection!\n");
     return -1;
   }
 
-  /* opens file to transmit
+  // opens file to transmit
   FILE *file = openfile(argv[2]);
   if (file != NULL)
   {
     //startTransmission(fd, file);
-  }*/
+  }
 
   // close connection
   if (llclose(fd) == -1)
   {
-    printf("llclose: failed to close connection!");
+    printf("llclose: failed to close connection!\n");
     return -1;
   }
 
+  uninstallAlarm();
+
   return 0;
 }
+
+/*
+int writefile(int fd, FILE *file)
+{
+  while (!feof(img))
+  {
+    char c = fgetc(img);
+    write(fd, c, 1);
+    printf("%c", c);
+  }
+}*/
