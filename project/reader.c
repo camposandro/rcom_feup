@@ -371,7 +371,7 @@ int main(int argc, char **argv)
   // open connection
   llopen(fd);
 
-  receivefile(fd);
+  //receivefile(fd);
 
   // close connection
   llclose(fd);
