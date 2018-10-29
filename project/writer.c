@@ -14,7 +14,7 @@ typedef enum
 } State;
 
 // ----------------- UTILS ----------------------
-unsigned char *stuff(unsigned char *buf, int *bufsize)
+void stuff(unsigned char *buf, int *bufsize)
 {
   unsigned char *stuffedBuf = (unsigned char *)malloc(*bufsize);
 
@@ -23,14 +23,14 @@ unsigned char *stuff(unsigned char *buf, int *bufsize)
   {
     if (buf[i] == FLAG)
     {
-      stuffedBuf = (unsigned char *)realloc(stuffedBuf, (*bufsize)++);
+      stuffedBuf = (unsigned char *)realloc(stuffedBuf, ++(*bufsize));
       stuffedBuf[i] = ESCAPE;
       stuffedBuf[i + 1] = FLAG ^ 0x20;
       i += 2;
     }
     else if (buf[i] == ESCAPE)
     {
-      stuffedBuf = (unsigned char *)realloc(stuffedBuf, (*bufsize)++);
+      stuffedBuf = (unsigned char *)realloc(stuffedBuf, ++(*bufsize));
       stuffedBuf[i] = ESCAPE;
       stuffedBuf[i + 1] = ESCAPE ^ 0x20;
       i += 2;
@@ -40,9 +40,9 @@ unsigned char *stuff(unsigned char *buf, int *bufsize)
       stuffedBuf[i] = buf[i];
     }
   }
-  //free(buf);
-  
-  return stuffedBuf;
+
+  *buf = *stuffedBuf;
+  free(stuffedBuf);
 }
 
 void printArr(unsigned char arr[], int size)
@@ -101,7 +101,7 @@ void destroyDataLinkLayer()
 
 unsigned char *readControlFrame(int fd, unsigned char c)
 {
-  unsigned char* control = (unsigned char *)malloc(5);
+  unsigned char *control = (unsigned char *)malloc(5);
   unsigned char byte;
 
   State state = INITIAL;
@@ -426,57 +426,59 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
   frame[3] = frame[1] ^ frame[2];
 
   // save bcc2 before stuffing
-  unsigned char bcc2 = buf[0];
+  int bcc2size = 1;
+  unsigned char *bcc2 = (unsigned char *)malloc(sizeof(unsigned char));
+  bcc2[0] = buf[0];
 
   int i = 1;
   for (; i < bufsize; i++)
-    bcc2 ^= buf[i];
+    bcc2[0] ^= buf[i];
 
   // data stuffing
-  unsigned char *stuffedbuf = stuff(buf, &bufsize);
+  stuff(buf, &bufsize);
   if (bufsize != totalsize - 6)
   {
-    // new totalsize, after stuffing data
     totalsize = bufsize + 6;
+    // new totalsize, after stuffing data
     frame = (unsigned char *)realloc(frame, totalsize);
 
     for (i = 0; i < bufsize; i++)
-      frame[4 + i] = stuffedbuf[i];
+      frame[4 + i] = buf[i];
   }
   else
   {
     for (i = 0; i < bufsize; i++)
-      frame[4 + i] = stuffedbuf[i];
+      frame[4 + i] = buf[i];
   }
 
   // bcc2 stuffing
-  int bcc2size = 1;
-  unsigned char *stuffedBcc2 = stuff(&bcc2, &bcc2size);
-
+  stuff(bcc2, &bcc2size);
   if (bcc2size > 1)
   {
     // in case bcc2 was stuffed
-    frame = (unsigned char *)realloc(frame, totalsize++);
+    frame = (unsigned char *)realloc(frame, totalsize + bcc2size);
 
     int j = 0;
     for (; j < bcc2size; j++)
-      frame[4 + bufsize + j] = stuffedBcc2[j];
+      frame[4 + bufsize + j] = bcc2[j];
   }
   else
   {
-    frame[4 + bufsize] = bcc2;
+    frame[4 + bufsize] = bcc2[0];
   }
 
   frame[4 + bufsize + bcc2size] = FLAG;
 
   // send frame and wait confirmation
   RECEIVED = FALSE;
+  dl->ntries = 0;
+
   while (!RECEIVED && dl->ntries < MAX_TRIES)
   {
     // send frame
     write(fd, frame, totalsize);
-    printf("llwrite - frame sent: ");
-    printArr(frame, totalsize);
+    //printf("llwrite - frame sent: ");
+    //printArr(frame, totalsize);
 
     alarm(TIMEOUT);
 
@@ -485,25 +487,31 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
     if ((c == C_RR0 && dl->frame == 1) || (c == C_RR1 && dl->frame == 0))
     {
       RECEIVED = TRUE;
+      printf("llwrite: RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
       dl->frame ^= 1;
-      printf("llwrite: RR %x received for frame %d.\n", c, dl->frame);
     }
     else if (c == C_REJ0 || c == C_REJ1)
     {
-      printf("llwrite: REJ %x received for frame %d.\n", c, dl->frame);
+      RECEIVED = FALSE;
+      printf("llwrite: REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
     }
 
     alarm(0);
 
-    dl->timeout = 0;
     dl->ntries++;
+    dl->timeout = 0;
   }
-  dl->ntries = 0;
 
-  if (RECEIVED)
-    return 1;
-  else
-    return -1;
+  if (RECEIVED) {
+    printf("RR received\n");
+return 1;
+  }
+    
+  else {
+    printf("REJ received\n");
+ return -1;
+  }
+   
 }
 // ------------ END OF DATA LINK LAYER ----------------
 
@@ -546,7 +554,7 @@ void destroyApplicationLayer(Application *app)
 
 unsigned char *getDataPackage(Application *app, unsigned char *buf, off_t filesize, int *packagesize)
 {
-  unsigned char *dataPackage = (unsigned char *)malloc(filesize + 4);
+  unsigned char *dataPackage = (unsigned char *)malloc(*packagesize + 4);
 
   // construct dataFrame
   dataPackage[0] = DATAFRAME_C;
@@ -554,9 +562,9 @@ unsigned char *getDataPackage(Application *app, unsigned char *buf, off_t filesi
   dataPackage[2] = filesize / 256; // filesize MSB
   dataPackage[3] = filesize % 256; // filesize LSB
 
-  int i;
-  for (i = 4; i < *packagesize; i++)
-    dataPackage[i] = buf[i];
+  int i = 0;
+  for (; i < *packagesize; i++)
+    dataPackage[4 + i] = buf[i];
 
   app->package++;
   app->totalpackages++;
@@ -622,7 +630,7 @@ int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
   }
 
   // create start package with arguments filesize and filepath
-  int packagesize;
+  int packagesize = 0;
   unsigned char *package = getControlPackage(c, filesize, filepath, &packagesize);
 
   // send it via serial port
@@ -637,7 +645,7 @@ int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
   }
   else
   {
-    printf("sendControlPackage: could not send package!\n");
+    printf("sendControlPackage: could not send control package!\n");
     return -1;
   }
 }
@@ -664,10 +672,10 @@ int sendFile(Application *app)
   // allocate array to store file data
   unsigned char *filebuf = (unsigned char *)malloc(MAX_SIZE);
 
-  int readBytes;
-  while ((readBytes = fread(filebuf, sizeof(unsigned char), MAX_SIZE, file)) > 0) {
-    sendDataPackage(app, filebuf, readBytes);
-  }
+  int packageSize = 0;
+  while ((packageSize = fread(filebuf, sizeof(unsigned char), MAX_SIZE, file)) > 0)
+    if (sendDataPackage(app, filebuf, packageSize) == -1)
+      break;
 
   // send end control package
   sendControlPackage(app->fd, C_END, filesize, app->filepath);

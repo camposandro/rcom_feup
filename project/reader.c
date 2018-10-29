@@ -1,11 +1,9 @@
 #include "reader.h"
 
 int RECEIVED = FALSE;
-int stuffedByte = 0;
-int dataIdx = 4;
-struct termios oldtio, newtio;
+int SUCCESS = FALSE;
 
-unsigned char c;
+DataLink *dl;
 
 typedef enum
 {
@@ -14,219 +12,10 @@ typedef enum
   STATE_A,
   STATE_C,
   STATE_BCC,
-  STATE_DATA,
-  STATE_BCC2
+  STATE_FINAL
 } State;
 
-/* state machine for handling received bytes */
-void handle_control(State *state, unsigned char byte, unsigned char control[])
-{
-  switch (*state)
-  {
-  case INITIAL:
-    if (byte == FLAG)
-    {
-      control[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    break;
-  case STATE_FLAG:
-    if (byte == A_TRANSMITTER)
-    {
-      control[1] = A_TRANSMITTER;
-      *state = STATE_A;
-    }
-    else if (byte == FLAG)
-    {
-      control[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  case STATE_A:
-    if (byte == c)
-    {
-      control[2] = c;
-      *state = STATE_C;
-    }
-    else if (byte == FLAG)
-    {
-      control[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  case STATE_C:
-    if (byte == control[1] ^ control[2])
-    {
-      control[3] = control[1] ^ control[2];
-      *state = STATE_BCC;
-    }
-    else if (byte == FLAG)
-    {
-      control[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  case STATE_BCC:
-    if (byte == FLAG)
-    {
-      control[4] = FLAG;
-      RECEIVED = TRUE;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  default:
-    break;
-  }
-}
-/*
-int nrBytes = 0;
-void handle_frame(State *state, unsigned char byte, unsigned char frameI[])
-{
-  switch (*state)
-  {
-  case INITIAL:
-    if (byte == FLAG)
-    {
-      frameI[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    break;
-  case STATE_FLAG:
-    if (byte == A_RECEIVED)
-    {
-      frameI[1] = A_RECEIVED;
-      *state = STATE_A;
-    }
-    else if (byte == FLAG)
-    {
-      frameI[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  case STATE_A:
-    if (byte == C_RECEIVED)
-    {
-      frameI[2] = C_RECEIVED;
-      *state = STATE_C;
-    }
-    else if (byte == FLAG)
-    {
-      frameI[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  case STATE_C:
-    if (byte == frameI[1] ^ frameI[2])
-    {
-      frameI[3] = frameI[1] ^ frameI[2];
-      *state = STATE_BCC;
-    }
-    else if (byte == FLAG)
-    {
-      frameI[0] = FLAG;
-      *state = STATE_FLAG;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-    break;
-  case STATE_BCC:
-    if (byte == ESCAPE)
-    {
-      stuffedByte = 1;
-    }
-    else if (stuffedByte)
-    {
-      frameI[dataIdx++] = byte ^ 0x20;
-      stuffedByte = 0;
-    }
-    else
-    {
-      frameI[dataIdx++] = byte;
-      nrBytes++;
-    }
-    if (nrBytes == D_SIZE)
-    {
-      nrBytes = 0;
-      *state = STATE_DATA;
-    }
-    break;
-  case STATE_DATA:
-  {
-    unsigned char bcc2 = frameI[4];
-
-    int i;
-    for (i = 5; i < dataIdx; i++)
-    {
-      bcc2 ^= frameI[i];
-    }
-
-    if (byte == bcc2)
-    {
-      frameI[dataIdx++] = byte;
-      *state = STATE_BCC2;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-  }
-  break;
-  case STATE_BCC2:
-  {
-    if (byte == FLAG)
-    {
-      frameI[dataIdx] = FLAG;
-      RECEIVED = TRUE;
-    }
-    else
-    {
-      *state = INITIAL;
-    }
-  }
-  break;
-  default:
-    break;
-  }
-}
-
-int llread(int fd, char *buffer)
-{
-  int read = 0;
-  unsigned char setup[5], frame[MAX_SIZE];
-
-  State state = INITIAL;
-  while (RECEIVED == FALSE)
-  {
-    read += read(fd, buffer, 1);         // returns after 1 char has been input /
-    handle_setup(&state, buf[0], setup); // handle byte received /
-  }
-}*/
-
+// ----------------- UTILS ----------------------
 void print_arr(unsigned char arr[], int size)
 {
   int i;
@@ -235,105 +24,194 @@ void print_arr(unsigned char arr[], int size)
   printf("\n");
 }
 
-int receivefile(int fd)
+int receivedBcc2(unsigned char *frameI, int frameSize)
 {
-  int readBytes;
+  if (frameSize == 0)
+    return FALSE;
 
-  FILE* file = fopen("penguin2.gif", "a"); 
+  unsigned char bcc2 = frameI[0];
 
-  char* buf = (char *) malloc(MAX_SIZE);
+  int i = 1;
+  for (; i < frameSize - 1; i++)
+    bcc2 ^= frameI[i];
 
-  while ((readBytes = read(fd, buf, MAX_SIZE)) > 0) {
-    fwrite(buf, sizeof(char), readBytes, file);
+  if (frameI[frameSize - 1] == bcc2)
+    return TRUE;
+  else
+    return FALSE;
+}
+
+int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf)
+{
+  // open new file
+  FILE *file = fopen(filepath, "wb");
+  if (file == NULL)
+  {
+    perror("saveFile: could not open new file!\n");
+    exit(-1);
   }
 
-  fclose(file);
+  if (fwrite(filebuf, sizeof(unsigned char), filesize, file) == -1)
+  {
+    printf("saveFile: error writing to file %s!\n", filepath);
+    return -1;
+  }
+
+  if (fclose(file) == -1)
+  {
+    printf("saveFile: error closing file %s!\n", filepath);
+    return -1;
+  }
 
   return 1;
 }
+// --------------- END OF UTILS --------------------
 
-int llclose(int fd)
+// ----------- DATA LINK LAYER -----------------
+DataLink *initDataLinkLayer()
 {
-  unsigned char ua[5], disc[5], buf[255];
+  // allocate data link struct
+  dl = (DataLink *)malloc(sizeof(DataLink));
+
+  // initialize data link struct
+  dl->frame = 0;
+  dl->expectedFrame = 0;
+
+  return dl;
+}
+
+void destroyDataLinkLayer()
+{
+  // free datalink layer
+  free(dl);
+}
+
+unsigned char *readControlFrame(int fd, unsigned char c)
+{
+  unsigned char *control = (unsigned char *)malloc(5);
+  unsigned char byte;
 
   State state = INITIAL;
-  c = C_DISC;
   RECEIVED = FALSE;
-  while (RECEIVED == FALSE)
-  {                                       /* loop for input */
-    read(fd, buf, 1);                     /* returns after 1 char has been input */
-    handle_control(&state, buf[0], disc); /* handle byte received */
+
+  while (!RECEIVED)
+  {
+    read(fd, &byte, 1);
+
+    switch (state)
+    {
+    case INITIAL:
+      if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      break;
+    case STATE_FLAG:
+      if (byte == A_TRANSMITTER)
+      {
+        control[1] = A_TRANSMITTER;
+        state = STATE_A;
+      }
+      else if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      else
+      {
+        state = INITIAL;
+      }
+      break;
+    case STATE_A:
+      if (byte == c)
+      {
+        control[2] = c;
+        state = STATE_C;
+      }
+      else if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      else
+      {
+        state = INITIAL;
+      }
+      break;
+    case STATE_C:
+      if (byte == control[1] ^ control[2])
+      {
+        control[3] = control[1] ^ control[2];
+        state = STATE_BCC;
+      }
+      else if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      else
+      {
+        state = INITIAL;
+      }
+      break;
+    case STATE_BCC:
+      if (byte == FLAG)
+      {
+        RECEIVED = TRUE;
+        control[4] = FLAG;
+      }
+      else
+        state = INITIAL;
+      break;
+    default:
+      break;
+    }
   }
-  printf("llclose - DISC received: ");
-  print_arr(disc, 5);
 
-  /* send confirmation DISC */
-  write(fd, disc, 5);
-  printf("llclose - DISC sent: ");
-  print_arr(disc, 5);
-
-  state = INITIAL;
-  c = C_UA;
-  RECEIVED = FALSE;
-  while (RECEIVED == FALSE)
-  {                                     /* loop for input */
-    read(fd, buf, 1);                   /* returns after 1 char has been input */
-    handle_control(&state, buf[0], ua); /* handle byte received */
-  }
-  printf("llclose - UA received: ");
-  print_arr(ua, 5);
-
-  tcsetattr(fd, TCSANOW, &oldtio);
-
-  return fd;
+  return control;
 }
 
 int llopen(int fd)
 {
-  unsigned char buf[255], setup[5], ua[5];
+  unsigned char ua[5];
 
-  if (tcgetattr(fd, &oldtio) == -1)
+  if (tcgetattr(fd, &dl->oldtio) == -1)
   { /* save current port settings */
     perror("llopen - tcgetattr error!");
     exit(-1);
   }
 
-  bzero(&newtio, sizeof(newtio));
-  newtio.c_cflag = BAUDRATE | CS8 | CLOCAL | CREAD;
-  newtio.c_iflag = IGNPAR;
-  newtio.c_oflag = 0;
+  bzero(&dl->newtio, sizeof(dl->newtio));
+  dl->newtio.c_cflag = BAUDRATE | CS8 | CLOCAL | CREAD;
+  dl->newtio.c_iflag = IGNPAR;
+  dl->newtio.c_oflag = 0;
 
   /* set input mode (non-canonical, no echo,...) */
-  newtio.c_lflag = 0;
+  dl->newtio.c_lflag = 0;
 
   /*
   VTIME e VMIN devem ser alterados de forma a proteger com um temporizador a
   leitura do(s) próximo(s) caracter(es)
   */
-  newtio.c_cc[VTIME] = 0; /* inter-character timer unused */
-  newtio.c_cc[VMIN] = 1;  /* blocking read until 1 char is received */
+  dl->newtio.c_cc[VTIME] = 0; /* inter-character timer unused */
+  dl->newtio.c_cc[VMIN] = 1;  /* blocking read until 1 char is received */
 
   tcflush(fd, TCIOFLUSH);
 
-  if (tcsetattr(fd, TCSANOW, &newtio) == -1)
+  if (tcsetattr(fd, TCSANOW, &dl->newtio) == -1)
   {
     perror("llopen - tcsetattr error!");
     exit(-1);
   }
   printf("llopen: new termios structure set\n");
 
-  State state = INITIAL;
-  c = C_SET;
-  RECEIVED = FALSE;
-  while (RECEIVED == FALSE)
-  {                                        /* loop for input */
-    read(fd, buf, 1);                      /* returns after 1 char has been input */
-    handle_control(&state, buf[0], setup); /* handle byte received */
-  }
+  // wait for SET control frame
+  unsigned char *setup = readControlFrame(fd, C_SET);
   printf("llopen - SET received: ");
   print_arr(setup, 5);
 
-  /* send confirmation */
+  // send UA confirmation
   ua[0] = setup[0];
   ua[1] = A_TRANSMITTER;
   ua[2] = C_UA;
@@ -347,6 +225,323 @@ int llopen(int fd)
   return fd;
 }
 
+int llclose(int fd)
+{
+  // wait for DISC control frame
+  unsigned char *disc = readControlFrame(fd, C_DISC);
+  printf("llclose - DISC received: ");
+  print_arr(disc, 5);
+
+  // send DISC confirmation frame
+  write(fd, disc, 5);
+  printf("llclose - DISC sent: ");
+  print_arr(disc, 5);
+
+  // wait for UA control frame
+  unsigned char *ua = readControlFrame(fd, C_UA);
+  printf("llclose - UA received: ");
+  print_arr(ua, 5);
+
+  tcsetattr(fd, TCSANOW, &dl->oldtio);
+
+  return fd;
+}
+
+unsigned char *llread(int fd, int *frameSize)
+{
+  int stuffedByte = 0;
+  unsigned char control[5], byte, c;
+
+  unsigned char *frameI = (unsigned char *)malloc(*frameSize);
+
+  State state = INITIAL;
+  RECEIVED = FALSE, SUCCESS = FALSE;
+
+  while (!RECEIVED)
+  {
+    read(fd, &byte, 1);
+
+    switch (state)
+    {
+    case INITIAL:
+      if (byte == FLAG)
+        state = STATE_FLAG;
+      break;
+    case STATE_FLAG:
+      if (byte == A_TRANSMITTER)
+        state = STATE_A;
+      else if (byte == FLAG)
+        state = STATE_FLAG;
+      else
+        state = INITIAL;
+      break;
+    case STATE_A:
+      if (byte == C_0)
+      {
+        c = byte;
+        dl->frame = 0;
+        state = STATE_C;
+      }
+      else if (byte == C_1)
+      {
+        c = byte;
+        dl->frame = 1;
+        state = STATE_C;
+      }
+      else if (byte == FLAG)
+        state = STATE_FLAG;
+      else
+        state = INITIAL;
+      break;
+    case STATE_C:
+      if (byte == (A_TRANSMITTER ^ c))
+        state = STATE_BCC;
+      else if (byte == FLAG)
+        state = STATE_FLAG;
+      else
+        state = INITIAL;
+      break;
+    case STATE_BCC:
+      // if FLAG is received
+      if (byte == FLAG)
+      {
+        // if BCC2 was correct
+        if (receivedBcc2(frameI, *frameSize))
+        {
+          if (dl->frame == 0)
+          {
+            // send C_RR1
+            control[0] = FLAG;
+            control[1] = A_TRANSMITTER;
+            control[2] = C_RR1;
+            control[3] = control[1] ^ control[2];
+            control[4] = FLAG;
+            write(fd, control, 5);
+          }
+          else if (dl->frame == 1)
+          {
+            // send C_RR0
+            control[0] = FLAG;
+            control[1] = A_TRANSMITTER;
+            control[2] = C_RR0;
+            control[3] = control[1] ^ control[2];
+            control[4] = FLAG;
+            write(fd, control, 5);
+          }
+
+          // if RR was sent
+          if (dl->frame == dl->expectedFrame)
+          {
+            dl->expectedFrame ^= 1;
+            SUCCESS = TRUE;
+            printf("llread: RR%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
+          }
+        }
+        else
+        {
+          if (dl->frame == 0)
+          {
+            // send C_REJ1
+            control[0] = FLAG;
+            control[1] = A_TRANSMITTER;
+            control[2] = C_REJ1;
+            control[3] = control[1] ^ control[2];
+            control[4] = FLAG;
+            write(fd, control, 5);
+          }
+          else if (dl->frame == 1)
+          {
+            // send C_REJ0
+            control[0] = FLAG;
+            control[1] = A_TRANSMITTER;
+            control[2] = C_REJ0;
+            control[3] = control[1] ^ control[2];
+            control[4] = FLAG;
+            write(fd, control, 5);
+          }
+
+          printf("llread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
+        }
+
+        RECEIVED = TRUE;
+      }
+      // if ESCAPE is received
+      else if (byte == ESCAPE)
+        stuffedByte = 1;
+      else if (stuffedByte)
+      {
+        frameI = (unsigned char *)realloc(frameI, ++(*frameSize));
+        frameI[*frameSize - 1] = byte ^ 0x20;
+        stuffedByte = 0;
+      }
+      else
+      {
+        frameI = (unsigned char *)realloc(frameI, ++(*frameSize));
+        frameI[*frameSize - 1] = byte;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
+  // remove bcc2 from data frame
+  (*frameSize)--;
+  frameI = (unsigned char *)realloc(frameI, *frameSize);
+
+  if (SUCCESS)
+  {
+    return frameI;
+  }
+  else
+  {
+    free(frameI);
+    return NULL;
+  }
+}
+
+// ------------ END OF DATA LINK LAYER ----------------
+
+// -------------- APPLICATION LAYER -------------------
+Application *initApplicationLayer(char *port, char *filepath)
+{
+  Application *app = (Application *)malloc(sizeof(Application));
+
+  /*
+  Open serial port device for reading and writing and not as controlling tty
+  because we don't want to get killed if linenoise sends CTRL-C.
+  */
+  app->fd = open(port, O_RDWR | O_NOCTTY);
+  if (app->fd < 0)
+  {
+    perror(port);
+    exit(-1);
+  }
+
+  // initialize datalink layer
+  dl = initDataLinkLayer();
+
+  return app;
+}
+
+void destroyApplicationLayer(Application *app)
+{
+  destroyDataLinkLayer();
+
+  // free application layer
+  free(app);
+}
+
+unsigned char *parseStartPackage(Application *app)
+{
+  int packageSize = 0;
+  unsigned char *startPackage = llread(app->fd, &packageSize);
+
+  if (startPackage == NULL || startPackage[0] != C_START)
+  {
+    printf("parseStartPackage: package is not START package!\n");
+    return NULL;
+  }
+
+  // save file size
+  app->filesize = 0;
+
+  off_t filesizeSize = startPackage[2];
+
+  int i = 0;
+  for (; i < filesizeSize; i++)
+    app->filesize |= (startPackage[3 + i] << (8 * filesizeSize - 8 * i));
+
+  // save file path
+  int filepathSize = startPackage[8];
+  app->filepath = (char *)malloc(filepathSize + 1);
+
+  // building the c-string for filepath
+  int j = 0;
+  for (; j < filepathSize; j++)
+    app->filepath[j] = startPackage[9 + j];
+  app->filepath[j] = '\0';
+
+  printf("path:%s\n", app->filepath);
+
+  return startPackage;
+}
+
+void parseDataPackage(unsigned char *package, int *packageSize)
+{
+  *packageSize -= 4;
+  unsigned char *data = (unsigned char *)malloc(*packageSize);
+
+  int i = 0;
+  for (; i < *packageSize; i++)
+    data[i] = package[4 + i];
+
+  package = (unsigned char *)realloc(package, *packageSize);
+  memcpy(package, data, *packageSize);
+
+  free(data);
+}
+
+int endPackageReceived(int fd, unsigned char *start, unsigned char *package, int packageSize)
+{
+  if (package[0] != C_END)
+  {
+    return FALSE;
+  }
+  else
+  {
+    printf("receiveFile: END package received!\n");
+    return TRUE;
+  }
+
+  /* if received package is equal to the start package
+  if (memcmp(start + 1, package + 1, packageSize) == 0)
+    return TRUE;
+  else
+    return FALSE;*/
+}
+
+int receiveFile(Application *app)
+{
+  // receive first control package
+  unsigned char *startPackage = parseStartPackage(app);
+  if (startPackage != NULL)
+    printf("receiveFile: START package received!\n");
+  else
+    return -1;
+
+  // allocate array to store file data
+  unsigned char *filebuf = (unsigned char *)malloc(app->filesize);
+
+  off_t idx = 0;
+  int packageSize = 0;
+  unsigned char *package;
+
+  while (TRUE)
+  {
+    package = llread(app->fd, &packageSize);
+    if (package == NULL)
+      continue;
+
+    // if end package is received
+    if (endPackageReceived(app->fd, startPackage, package, packageSize))
+      break;
+
+    parseDataPackage(package, &packageSize);
+    memcpy(filebuf + idx, package, packageSize);
+    idx += packageSize;
+  }
+
+  unsigned char *filepath2 = "penguin2.gif";
+  saveFile(filepath2, app->filesize, filebuf);
+
+  // deallocate buffer storing file data
+  free(filebuf);
+  return 1;
+}
+
+// ----------- END OF APPLICATION LAYER -----------------
+
 int main(int argc, char **argv)
 {
   if ((argc < 2) ||
@@ -357,24 +552,28 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  /*
-  Open serial port device for reading and writing and not as controlling tty
-  because we don't want to get killed if linenoise sends CTRL-C.
-  */
-  int fd = open(argv[1], O_RDWR | O_NOCTTY);
-  if (fd < 0)
-  {
-    perror(argv[1]);
-    exit(-1);
-  }
+  // initialize application layer
+  Application *app = initApplicationLayer(argv[1], argv[2]);
 
   // open connection
-  llopen(fd);
+  if (llopen(app->fd) == -1)
+  {
+    printf("llopen: failed to open connection!\n");
+    return -1;
+  }
 
-  //receivefile(fd);
+  // receives file being transmitted
+  receiveFile(app);
 
   // close connection
-  llclose(fd);
+  if (llclose(app->fd) == -1)
+  {
+    printf("llclose: failed to close connection!\n");
+    return -1;
+  }
+
+  // destroy application layer
+  destroyApplicationLayer(app);
 
   return 0;
 }

@@ -61,7 +61,6 @@ typedef struct
     int frame;                     // current frame number
     int timeout;                   // timeout flag
     int ntries;                    // number of timeout tries
-    unsigned char frameC;          // expected C control parameter
     struct termios oldtio, newtio; // structs storing terminal configurations
 } DataLink;
 
@@ -99,6 +98,6 @@ void installAlarm();
 
 void uninstallAlarm();
 
-unsigned char *stuff(unsigned char *buf, int *bufsize);
+void stuff(unsigned char *buf, int *bufsize);
 
 void printArr(unsigned char arr[], int size);
