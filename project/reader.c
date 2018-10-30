@@ -16,7 +16,7 @@ typedef enum
 } State;
 
 // ----------------- UTILS ----------------------
-void print_arr(unsigned char arr[], int size)
+void printArr(unsigned char arr[], int size)
 {
   int i;
   for (i = 0; i < size; i++)
@@ -204,12 +204,12 @@ int llopen(int fd)
     perror("llopen - tcsetattr error!");
     exit(-1);
   }
-  printf("llopen: new termios structure set\n");
+  printf("llopen - new termios structure set\n");
 
   // wait for SET control frame
   unsigned char *setup = readControlFrame(fd, C_SET);
   printf("llopen - SET received: ");
-  print_arr(setup, 5);
+  printArr(setup, 5);
 
   // send UA confirmation
   ua[0] = setup[0];
@@ -220,9 +220,10 @@ int llopen(int fd)
 
   write(fd, ua, 5);
   printf("llopen - UA sent: ");
-  print_arr(ua, 5);
+  printArr(ua, 5);
 
-  return fd;
+  printf("llopen - connection successfully opened!\n");
+  return TRUE;
 }
 
 int llclose(int fd)
@@ -230,21 +231,23 @@ int llclose(int fd)
   // wait for DISC control frame
   unsigned char *disc = readControlFrame(fd, C_DISC);
   printf("llclose - DISC received: ");
-  print_arr(disc, 5);
+  printArr(disc, 5);
 
   // send DISC confirmation frame
   write(fd, disc, 5);
   printf("llclose - DISC sent: ");
-  print_arr(disc, 5);
+  printArr(disc, 5);
 
   // wait for UA control frame
   unsigned char *ua = readControlFrame(fd, C_UA);
   printf("llclose - UA received: ");
-  print_arr(ua, 5);
+  printArr(ua, 5);
 
   tcsetattr(fd, TCSANOW, &dl->oldtio);
 
-  return fd;
+  printf("llclose - connection successfully closed!\n");
+
+  return TRUE;
 }
 
 unsigned char *llread(int fd, int *frameSize)
@@ -360,6 +363,7 @@ unsigned char *llread(int fd, int *frameSize)
             write(fd, control, 5);
           }
 
+          SUCCESS = FALSE;
           printf("llread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
         }
 
@@ -386,8 +390,9 @@ unsigned char *llread(int fd, int *frameSize)
   }
 
   // remove bcc2 from data frame
-  (*frameSize)--;
-  frameI = (unsigned char *)realloc(frameI, *frameSize);
+  frameI = (unsigned char *)realloc(frameI, --(*frameSize));
+
+  printf("framsize = %d\n", *frameSize);
 
   if (SUCCESS)
   {
@@ -417,6 +422,7 @@ Application *initApplicationLayer(char *port, char *filepath)
     perror(port);
     exit(-1);
   }
+  app->filepath = filepath;
 
   // initialize datalink layer
   dl = initDataLinkLayer();
@@ -444,25 +450,27 @@ unsigned char *parseStartPackage(Application *app)
   }
 
   // save file size
-  app->filesize = 0;
-
   off_t filesizeSize = startPackage[2];
 
   int i = 0;
+  app->filesize = 0;
   for (; i < filesizeSize; i++)
-    app->filesize |= (startPackage[3 + i] << (8 * filesizeSize - 8 * i));
+    app->filesize |= (startPackage[3 + i] << (8 * filesizeSize - 8 * (i + 1)));
+
+  printf("filesize = %ld\n", app->filesize);
 
   // save file path
-  int filepathSize = startPackage[8];
-  app->filepath = (char *)malloc(filepathSize + 1);
+  int filepathSize = (int)startPackage[8];
+  /*app->filepath = (unsigned char *)malloc(filepathSize + 1);
 
   // building the c-string for filepath
   int j = 0;
   for (; j < filepathSize; j++)
     app->filepath[j] = startPackage[9 + j];
-  app->filepath[j] = '\0';
+  app->filepath[j] = '\0';*/
+  app->filepath ="penguin2.gif";
 
-  printf("path:%s\n", app->filepath);
+  printf("path = %s\n", app->filepath);
 
   return startPackage;
 }
@@ -484,21 +492,13 @@ void parseDataPackage(unsigned char *package, int *packageSize)
 
 int endPackageReceived(int fd, unsigned char *start, unsigned char *package, int packageSize)
 {
-  if (package[0] != C_END)
-  {
-    return FALSE;
-  }
-  else
-  {
+  // if received package is equal to the start package
+  if (package[0] == C_END && !memcmp(start + 1, package + 1, packageSize - 1)) {
     printf("receiveFile: END package received!\n");
     return TRUE;
   }
-
-  /* if received package is equal to the start package
-  if (memcmp(start + 1, package + 1, packageSize) == 0)
-    return TRUE;
   else
-    return FALSE;*/
+    return FALSE;
 }
 
 int receiveFile(Application *app)
@@ -510,18 +510,19 @@ int receiveFile(Application *app)
   else
     return -1;
 
-  // allocate array to store file data
+  // allocate array to store received file data
   unsigned char *filebuf = (unsigned char *)malloc(app->filesize);
 
   off_t idx = 0;
-  int packageSize = 0;
   unsigned char *package;
 
   while (TRUE)
   {
+    int packageSize = 0;
     package = llread(app->fd, &packageSize);
     if (package == NULL)
       continue;
+    //printArr(package, packageSize);
 
     // if end package is received
     if (endPackageReceived(app->fd, startPackage, package, packageSize))
@@ -532,8 +533,7 @@ int receiveFile(Application *app)
     idx += packageSize;
   }
 
-  unsigned char *filepath2 = "penguin2.gif";
-  saveFile(filepath2, app->filesize, filebuf);
+  saveFile(app->filepath, app->filesize, filebuf);
 
   // deallocate buffer storing file data
   free(filebuf);
@@ -556,7 +556,7 @@ int main(int argc, char **argv)
   Application *app = initApplicationLayer(argv[1], argv[2]);
 
   // open connection
-  if (llopen(app->fd) == -1)
+  if (!llopen(app->fd))
   {
     printf("llopen: failed to open connection!\n");
     return -1;
@@ -566,7 +566,7 @@ int main(int argc, char **argv)
   receiveFile(app);
 
   // close connection
-  if (llclose(app->fd) == -1)
+  if (!llclose(app->fd))
   {
     printf("llclose: failed to close connection!\n");
     return -1;

@@ -31,8 +31,7 @@
 #define T2 0x01 // filepath parameter type
 
 // information frame flags
-#define MAX_SIZE 255
-#define DSIZE 10
+#define PACKAGE_SIZE 255
 #define C_0 0x00
 #define C_1 0x40
 
@@ -68,9 +67,9 @@ Application *initApplicationLayer(char *port, char *filepath);
 
 void destroyApplicationLayer(Application *app);
 
-unsigned char *getDataPackage(Application *app, unsigned char *buf, off_t filesize, int *packagesize);
+unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize);
 
-int sendDataPackage(Application *app, unsigned char *buf, int packagesize);
+int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize);
 
 unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filepath, int *packagesize);
 

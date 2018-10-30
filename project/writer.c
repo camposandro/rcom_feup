@@ -308,7 +308,7 @@ int llopen(int fd)
     perror("llopen - tcsetattr error!\n");
     exit(-1);
   }
-  printf("llopen: new termios structure set\n");
+  printf("llopen - new termios structure set\n");
 
   State state = INITIAL;
   setup[0] = FLAG;
@@ -318,6 +318,9 @@ int llopen(int fd)
   setup[4] = FLAG;
 
   RECEIVED = FALSE;
+  dl->ntries = 0;
+
+  unsigned char *ua;
   while (!RECEIVED && dl->ntries < MAX_TRIES)
   {
     // writes SET to serial port
@@ -328,27 +331,25 @@ int llopen(int fd)
     alarm(TIMEOUT);
 
     // read ua confirmation frame
-    unsigned char *ua = readControlFrame(fd, C_UA);
-    if (RECEIVED)
-    {
-      printf("llopen - UA received: ");
-      printArr(ua, 5);
-    }
+    ua = readControlFrame(fd, C_UA);
 
     alarm(0);
 
     dl->timeout = 0;
     dl->ntries++;
   }
-  dl->ntries = 0;
 
   if (RECEIVED)
   {
-    return fd;
+    printf("llopen - UA received: ");
+    printArr(ua, 5);
+    printf("llopen - connection opened successfully!\n");
+    return TRUE;
   }
   else
   {
-    return -1;
+    printf("llopen - failed to open connection!\n");
+    return FALSE;
   }
 }
 
@@ -364,6 +365,8 @@ int llclose(int fd)
   disc[4] = FLAG;
 
   RECEIVED = FALSE;
+  dl->ntries = 0;
+
   while (!RECEIVED && dl->ntries < MAX_TRIES)
   {
     /* writes SET to serial port */
@@ -375,21 +378,18 @@ int llclose(int fd)
 
     // read disc confirmation frame
     unsigned char *disc = readControlFrame(fd, C_DISC);
-    if (RECEIVED)
-    {
-      printf("llclose - DISC received: ");
-      printArr(disc, 5);
-    }
 
     alarm(0);
 
     dl->timeout = 0;
     dl->ntries++;
   }
-  dl->ntries = 0;
 
   if (RECEIVED)
   {
+    printf("llclose - DISC received: ");
+    printArr(disc, 5);
+
     ua[0] = FLAG;
     ua[1] = A_TRANSMITTER;
     ua[2] = C_UA;
@@ -401,15 +401,21 @@ int llclose(int fd)
     printArr(ua, 5);
   }
 
-  tcsetattr(fd, TCSANOW, &dl->oldtio);
+  if (tcsetattr(fd, TCSANOW, &dl->oldtio) == -1)
+  {
+    perror("llclose - tcsetattr error!\n");
+    exit(-1);
+  }
 
   if (close(fd) == -1)
   {
-    return -1;
+    printf("llclose - failed to close connection!\n");
+    return FALSE;
   }
   else
   {
-    return 1;
+    printf("llclose - connection successfully closed!\n");
+    return TRUE;
   }
 }
 
@@ -502,16 +508,10 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
     dl->timeout = 0;
   }
 
-  if (RECEIVED) {
-    printf("RR received\n");
-return 1;
-  }
-    
-  else {
-    printf("REJ received\n");
- return -1;
-  }
-   
+  if (RECEIVED)
+    return 1;
+  else
+    return -1;
 }
 // ------------ END OF DATA LINK LAYER ----------------
 
@@ -552,15 +552,15 @@ void destroyApplicationLayer(Application *app)
   free(app);
 }
 
-unsigned char *getDataPackage(Application *app, unsigned char *buf, off_t filesize, int *packagesize)
+unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize)
 {
   unsigned char *dataPackage = (unsigned char *)malloc(*packagesize + 4);
 
   // construct dataFrame
   dataPackage[0] = DATAFRAME_C;
   dataPackage[1] = app->package % 255;
-  dataPackage[2] = filesize / 256; // filesize MSB
-  dataPackage[3] = filesize % 256; // filesize LSB
+  dataPackage[2] = (int) filesize / 256; // filesize MSB
+  dataPackage[3] = (int) filesize % 256; // filesize LSB
 
   int i = 0;
   for (; i < *packagesize; i++)
@@ -573,9 +573,9 @@ unsigned char *getDataPackage(Application *app, unsigned char *buf, off_t filesi
   return dataPackage;
 }
 
-int sendDataPackage(Application *app, unsigned char *buf, int packagesize)
+int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize)
 {
-  unsigned char *dataPackage = getDataPackage(app, buf, app->package, &packagesize);
+  unsigned char *dataPackage = getDataPackage(app, buf, &packagesize, filesize);
 
   if (llwrite(app->fd, dataPackage, packagesize) == -1)
   {
@@ -650,32 +650,53 @@ int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
   }
 }
 
+unsigned char *getBufPackage(unsigned char *filebuf, off_t *idx, int *packageSize, off_t filesize)
+{
+  if (*idx + *packageSize > filesize)
+    *packageSize = filesize - *idx;
+
+  unsigned char *package = (unsigned char *)malloc(*packageSize);
+  memcpy(package, filebuf + *idx, *packageSize);
+  *idx += *packageSize;
+
+  printf("package: ");
+  printArr(package, *packageSize);
+  printf("idx = %ld\n", *idx);
+
+  return package;
+}
+
 int sendFile(Application *app)
 {
   // open file
   FILE *file = fopen(app->filepath, "rb");
   if (file == NULL)
   {
-    perror("openfile: could not read file!\n");
+    perror("openfile - could not read file!\n");
     exit(-1);
   }
 
   // extract file metadata
   struct stat metadata;
-  stat(app->filepath, &metadata);
+  stat((char *)app->filepath, &metadata);
   off_t filesize = metadata.st_size;
-  printf("File of size %ld bytes.\n", filesize);
+  printf("sendFile - file %s of size %ld bytes.\n", app->filepath, filesize);
+
+  // allocate array to store file data
+  unsigned char *filebuf = (unsigned char *)malloc(filesize);
+  fread(filebuf, sizeof(unsigned char), filesize, file);
 
   // send start control package
   sendControlPackage(app->fd, C_START, filesize, app->filepath);
 
-  // allocate array to store file data
-  unsigned char *filebuf = (unsigned char *)malloc(MAX_SIZE);
-
-  int packageSize = 0;
-  while ((packageSize = fread(filebuf, sizeof(unsigned char), MAX_SIZE, file)) > 0)
-    if (sendDataPackage(app, filebuf, packageSize) == -1)
+  off_t idx = 0;
+  int packageSize = PACKAGE_SIZE;
+  while (idx < filesize)
+  {
+    unsigned char *package = getBufPackage(filebuf, &idx, &packageSize, filesize);
+    if (sendDataPackage(app, package, packageSize, filesize) == -1)
       break;
+  }
 
   // send end control package
   sendControlPackage(app->fd, C_END, filesize, app->filepath);
@@ -716,7 +737,7 @@ int main(int argc, char **argv)
   time(&start);
 
   // open connection
-  if (llopen(app->fd) == -1)
+  if (!llopen(app->fd))
   {
     printf("llopen: failed to open connection!\n");
     return -1;
@@ -726,7 +747,7 @@ int main(int argc, char **argv)
   sendFile(app);
 
   // close connection
-  if (llclose(app->fd) == -1)
+  if (!llclose(app->fd))
   {
     printf("llclose: failed to close connection!\n");
     return -1;

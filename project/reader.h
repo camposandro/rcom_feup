@@ -23,8 +23,7 @@
 #define C_END 0x03   // control package end state byte
 
 // information frame flags
-#define MAX_SIZE 255
-#define DSIZE 10
+#define PACKAGE_SIZE 255
 #define C_0 0x00
 #define C_1 0x40
 
@@ -42,9 +41,9 @@
 
 typedef struct
 {
-    int fd;         // serial port descriptor
-    char *filepath; // path of received file
-    off_t filesize; // filesize to be received
+    int fd;                  // serial port descriptor
+    unsigned char *filepath; // path of received file
+    off_t filesize;          // filesize to be received
 } Application;
 
 typedef struct
