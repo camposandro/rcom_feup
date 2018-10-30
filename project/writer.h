@@ -48,7 +48,7 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
-#define PROGRESS_BAR_DIM  20
+#define PROGRESS_BAR_DIM 20
 
 typedef enum
 {
@@ -62,16 +62,16 @@ typedef enum
 typedef struct
 {
     int fd;            // serial port descriptor
-    char *filepath;    // path of file to be sent
+    char *filename;    // path of file to be sent
     int package;       // number of current package
-    int totalpackages; // total number of packages
+    int totalPackages; // total number of packages
 } Application;
 
 typedef struct
 {
     int frame;                     // current frame number
     int timeout;                   // timeout flag
-    int ntries;                    // number of timeout tries
+    int nTries;                    // number of timeout tries
     struct termios oldtio, newtio; // structs storing terminal configurations
 } DataLink;
 
@@ -122,6 +122,8 @@ void timeoutHandler(int signo);
 void installAlarm();
 
 void uninstallAlarm();
+
+void printProgressBar(Application *app);
 
 void printArr(unsigned char arr[], int size);
 

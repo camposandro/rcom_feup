@@ -1,5 +1,6 @@
 #include "writer.h"
 
+int DEBUG = FALSE;
 int received = FALSE;
 
 DataLink *dl;
@@ -46,7 +47,7 @@ int main(int argc, char **argv)
   time(&end);
 
   double elapsed = difftime(end, start);
-  printf("# File transfered in %.2f seconds!\n", elapsed);
+  printf("# File transferred in %.2f seconds!\n", elapsed);
 
   uninstallAlarm();
 
@@ -57,7 +58,7 @@ int main(int argc, char **argv)
 }
 
 // --------------- APPLICATION LAYER --------------------
-Application *initApplicationLayer(char *port, char *filepath)
+Application *initApplicationLayer(char *port, char *filename)
 {
   Application *app = (Application *)malloc(sizeof(Application));
 
@@ -72,10 +73,10 @@ Application *initApplicationLayer(char *port, char *filepath)
     exit(-1);
   }
 
-  // store file path
-  app->filepath = filepath;
+  // store file name
+  app->filename = filename;
 
-  // start frame numbers
+  // start package numeration
   app->package = 0;
 
   // initialize datalink layer
@@ -92,24 +93,10 @@ void destroyApplicationLayer(Application *app)
   free(app);
 }
 
-void printProgressBar(Application *app) {
-  int i = 0;
-
-  float percentage = ((float) app->package / app->totalpackages) * 100;
-  printf("\rProgress: [");
-  for (; i < PROGRESS_BAR_DIM; i++) {
-    if (i < percentage / (100 / PROGRESS_BAR_DIM))
-    printf("#");
-    else
-    printf(" ");
-  }
-  printf("] %d%%", (int) percentage);
-}
-
 int sendFile(Application *app)
 {
   // open file
-  FILE *file = fopen(app->filepath, "rb");
+  FILE *file = fopen(app->filename, "rb");
   if (file == NULL)
   {
     perror("[openfile] - could not read file!\n");
@@ -118,33 +105,38 @@ int sendFile(Application *app)
 
   // extract file metadata
   struct stat metadata;
-  stat((char *)app->filepath, &metadata);
+  stat((char *)app->filename, &metadata);
   off_t filesize = metadata.st_size;
-  //printf("[sendFile] - file %s of size %ld bytes.\n", app->filepath, filesize);
 
-  app->totalpackages = filesize / PACKAGE_SIZE;
-  if (filesize % PACKAGE_SIZE != 0) app->totalpackages++;
+  if (DEBUG)
+    printf("[sendFile] - file %s of size %ld bytes.\n", app->filename, filesize);
+
+  app->totalPackages = filesize / PACKAGE_SIZE;
+  if (filesize % PACKAGE_SIZE != 0)
+    app->totalPackages++;
 
   // allocate array to store file data
   unsigned char *filebuf = (unsigned char *)malloc(filesize);
   fread(filebuf, sizeof(unsigned char), filesize, file);
 
   // send start control package
-  sendControlPackage(app->fd, C_START, filesize, app->filepath);
+  sendControlPackage(app->fd, C_START, filesize, app->filename);
+
+  int packageSize = PACKAGE_SIZE;
 
   off_t idx = 0;
-  int packageSize = PACKAGE_SIZE;
   while (idx < filesize)
   {
     unsigned char *package = getBufPackage(filebuf, &idx, &packageSize, filesize);
     if (sendDataPackage(app, package, packageSize, filesize) == -1)
       break;
+
     printProgressBar(app);
   }
   printf("\n");
 
   // send end control package
-  sendControlPackage(app->fd, C_END, filesize, app->filepath);
+  sendControlPackage(app->fd, C_END, filesize, app->filename);
 
   // free file buf auxiliary array
   free(filebuf);
@@ -159,10 +151,10 @@ int sendFile(Application *app)
   return 1;
 }
 
-unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filepath, int *packagesize)
+unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filename, int *packageSize)
 {
-  *packagesize = 9 + strlen(filepath);
-  unsigned char *package = (unsigned char *)malloc(*packagesize);
+  *packageSize = 9 + strlen(filename);
+  unsigned char *package = (unsigned char *)malloc(*packageSize);
 
   if (!(c == C_START || c == C_END))
   {
@@ -183,15 +175,15 @@ unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filepath
 
   // package second argument - filepath
   package[7] = T2;
-  package[8] = strlen(filepath);
+  package[8] = strlen(filename);
   int i;
-  for (i = 0; i < strlen(filepath); i++)
-    package[i + 9] = filepath[i];
+  for (i = 0; i < strlen(filename); i++)
+    package[i + 9] = filename[i];
 
   return package;
 }
 
-int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
+int sendControlPackage(int fd, int c, off_t filesize, char *filename)
 {
   if (!(c == C_START || c == C_END))
   {
@@ -200,11 +192,11 @@ int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
   }
 
   // create start package with arguments filesize and filepath
-  int packagesize = 0;
-  unsigned char *package = getControlPackage(c, filesize, filepath, &packagesize);
+  int packageSize = 0;
+  unsigned char *package = getControlPackage(c, filesize, filename, &packageSize);
 
   // send it via serial port
-  if (llwrite(fd, package, packagesize) != -1)
+  if (llwrite(fd, package, packageSize) != -1)
   {
     if (c == C_START)
       printf("[sendControlPackage] - START package sent!\n");
@@ -232,9 +224,9 @@ unsigned char *getBufPackage(unsigned char *filebuf, off_t *idx, int *packageSiz
   return package;
 }
 
-unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize)
+unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packageSize, off_t filesize)
 {
-  unsigned char *dataPackage = (unsigned char *)malloc(*packagesize + 4);
+  unsigned char *dataPackage = (unsigned char *)malloc(*packageSize + 4);
 
   // construct dataFrame
   dataPackage[0] = DATAFRAME_C;
@@ -243,27 +235,31 @@ unsigned char *getDataPackage(Application *app, unsigned char *buf, int *package
   dataPackage[3] = (int)filesize % 256; // filesize LSB
 
   int i = 0;
-  for (; i < *packagesize; i++)
+  for (; i < *packageSize; i++)
     dataPackage[4 + i] = buf[i];
 
   app->package++;
-  *packagesize += 4;
+  *packageSize += 4;
 
   return dataPackage;
 }
 
-int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize)
+int sendDataPackage(Application *app, unsigned char *buf, int packageSize, off_t filesize)
 {
-  unsigned char *dataPackage = getDataPackage(app, buf, &packagesize, filesize);
+  unsigned char *dataPackage = getDataPackage(app, buf, &packageSize, filesize);
 
-  if (llwrite(app->fd, dataPackage, packagesize) == -1)
+  if (llwrite(app->fd, dataPackage, packageSize) == -1)
   {
-    //printf("[sendDataPackage] - could not send data package number %d!\n", app->package);
+    if (DEBUG)
+      printf("[sendDataPackage] - could not send data package number %d!\n\n", app->package);
+
     return -1;
   }
   else
   {
-    //printf("[sendDataPackage] - data package number %d sent!\n", app->package);
+    if (DEBUG)
+      printf("[sendDataPackage] - data package number %d sent!\n\n", app->package);
+
     return 1;
   }
 }
@@ -280,7 +276,7 @@ DataLink *initDataLinkLayer()
   // initialize data link struct
   dl->frame = 0;
   dl->timeout = 0;
-  dl->ntries = 0;
+  dl->nTries = 0;
 
   return dl;
 }
@@ -293,7 +289,7 @@ void destroyDataLinkLayer()
 
 unsigned char *readControlFrame(int fd, unsigned char c)
 {
-  unsigned char *control = (unsigned char *)malloc(5);
+  unsigned char *control = (unsigned char *)malloc(5 * sizeof(unsigned char));
   unsigned char byte;
 
   State state = INITIAL;
@@ -509,10 +505,10 @@ int llopen(int fd)
   setup[4] = FLAG;
 
   received = FALSE;
-  dl->ntries = 0;
+  dl->nTries = 0;
 
   unsigned char *ua;
-  while (!received && dl->ntries < MAX_TRIES)
+  while (!received && dl->nTries < MAX_TRIES)
   {
     // writes SET to serial port
     write(fd, setup, 5);
@@ -527,7 +523,7 @@ int llopen(int fd)
     alarm(0);
 
     dl->timeout = 0;
-    dl->ntries++;
+    dl->nTries++;
   }
 
   if (received)
@@ -539,7 +535,6 @@ int llopen(int fd)
   }
   else
   {
-    printf("[llopen] - failed to open connection!\n");
     return FALSE;
   }
 }
@@ -555,9 +550,9 @@ int llclose(int fd)
   disc[4] = FLAG;
 
   received = FALSE;
-  dl->ntries = 0;
+  dl->nTries = 0;
 
-  while (!received && dl->ntries < MAX_TRIES)
+  while (!received && dl->nTries < MAX_TRIES)
   {
     /* writes SET to serial port */
     write(fd, disc, 5);
@@ -572,7 +567,7 @@ int llclose(int fd)
     alarm(0);
 
     dl->timeout = 0;
-    dl->ntries++;
+    dl->nTries++;
   }
 
   if (received)
@@ -642,11 +637,11 @@ void stuff(unsigned char *buf, int *bufsize)
   free(stuffedBuf);
 }
 
-int llwrite(int fd, unsigned char *buf, int bufsize)
+int llwrite(int fd, unsigned char *buf, int bufSize)
 {
   // allocate frame memory space
-  int totalsize = bufsize + 6;
-  unsigned char *frame = (unsigned char *)malloc(totalsize);
+  int totalSize = bufSize + 6;
+  unsigned char *frame = (unsigned char *)malloc(totalSize);
 
   // frame construction
   frame[0] = FLAG;
@@ -655,53 +650,57 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
   frame[3] = frame[1] ^ frame[2];
 
   // save bcc2 before stuffing
-  int bcc2size = 1;
+  int bcc2Size = 1;
   unsigned char *bcc2 = (unsigned char *)malloc(sizeof(unsigned char));
   bcc2[0] = buf[0];
 
   int i = 1;
-  for (; i < bufsize; i++)
+  for (; i < bufSize; i++)
     bcc2[0] ^= buf[i];
 
   // data stuffing
-  stuff(buf, &bufsize);
-  if (bufsize != totalsize - 6)
+  stuff(buf, &bufSize);
+  if (bufSize != totalSize - 6)
   {
     // new totalsize, after stuffing data
-    totalsize = bufsize + 6;
+    totalSize = bufSize + 6;
   }
 
-  for (i = 0; i < bufsize; i++)
+  for (i = 0; i < bufSize; i++)
     frame[4 + i] = buf[i];
 
   // bcc2 stuffing
-  stuff(bcc2, &bcc2size);
-  if (bcc2size > 1)
+  stuff(bcc2, &bcc2Size);
+  if (bcc2Size > 1)
   {
     // in case bcc2 was stuffed
-    frame = (unsigned char *)realloc(frame, totalsize + bcc2size);
+    frame = (unsigned char *)realloc(frame, totalSize + bcc2Size);
 
     int j = 0;
-    for (; j < bcc2size; j++)
-      frame[4 + bufsize + j] = bcc2[j];
+    for (; j < bcc2Size; j++)
+      frame[4 + bufSize + j] = bcc2[j];
   }
   else
   {
-    frame[4 + bufsize] = bcc2[0];
+    frame[4 + bufSize] = bcc2[0];
   }
 
-  frame[4 + bufsize + bcc2size] = FLAG;
+  frame[4 + bufSize + bcc2Size] = FLAG;
 
   // send frame and wait confirmation
   received = FALSE;
-  dl->ntries = 0;
+  dl->nTries = 0;
 
-  while (!received && dl->ntries < MAX_TRIES)
+  while (!received && dl->nTries < MAX_TRIES)
   {
     // send frame
-    write(fd, frame, totalsize);
-    //printf("[llwrite] - frame sent: ");
-    //printArr(frame, totalsize);
+    write(fd, frame, totalSize);
+
+    if (DEBUG)
+    {
+      printf("\n[llwrite] - frame sent: ");
+      printArr(frame, totalSize);
+    }
 
     alarm(TIMEOUT);
 
@@ -710,18 +709,23 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
     if ((c == C_RR0 && dl->frame == 1) || (c == C_RR1 && dl->frame == 0))
     {
       received = TRUE;
-      //printf("[llwrite] - RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+
+      if (DEBUG)
+        printf("[llwrite] - RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+
       dl->frame ^= 1;
     }
     else if (c == C_REJ0 || c == C_REJ1)
     {
       received = FALSE;
-      //printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+
+      if (DEBUG)
+        printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
     }
 
     alarm(0);
 
-    dl->ntries++;
+    dl->nTries++;
     dl->timeout = 0;
   }
 
@@ -757,6 +761,24 @@ void uninstallAlarm()
   sigemptyset(&action.sa_mask);
   action.sa_flags = 0;
   sigaction(SIGALRM, &action, NULL);
+}
+
+void printProgressBar(Application *app)
+{
+  float percentage = ((float)app->package / app->totalPackages) * 100;
+
+  printf("\rProgress: [");
+
+  int i = 0;
+  for (; i < PROGRESS_BAR_DIM; i++)
+  {
+    if (i < percentage / (100 / PROGRESS_BAR_DIM))
+      printf("#");
+    else
+      printf(" ");
+  }
+
+  printf("] %d%%", (int)percentage);
 }
 
 void printArr(unsigned char arr[], int size)

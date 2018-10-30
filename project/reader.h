@@ -38,6 +38,7 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
+// progress bar
 #define PROGRESS_BAR_DIM 20
 
 typedef enum
@@ -53,10 +54,10 @@ typedef enum
 typedef struct
 {
     int fd;                  // serial port descriptor
-    unsigned char *filepath; // path of received file
+    unsigned char *filename; // path of received file
     off_t filesize;          // filesize to be received
-    int current_package;     // current package
-    int totalpackages;	     //totalpackages
+    int package;             // current package
+    int totalPackages;       //totalpackages
 } Application;
 
 typedef struct
@@ -68,7 +69,7 @@ typedef struct
 
 // --------------- APPLICATION LAYER --------------------
 
-Application *initApplicationLayer(char *port, char *filepath);
+Application *initApplicationLayer(char *port);
 
 void destroyApplicationLayer(Application *app);
 
@@ -92,9 +93,13 @@ int llopen(int fd);
 
 int llclose(int fd);
 
+unsigned char *readControlFrame(int fd, unsigned char c);
+
 unsigned char *llread(int fd, int *frameSize);
 
-unsigned char *readControlFrame(int fd, unsigned char c);
+void acceptFrame(int fd);
+
+void rejectFrame(int fd);
 
 // -------------- END OF DATA LINK LAYER ----------------
 
@@ -103,6 +108,8 @@ unsigned char *readControlFrame(int fd, unsigned char c);
 int receivedBcc2(unsigned char *frameI, int frameSize);
 
 int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf);
+
+void printProgressBar(Application *app);
 
 void printArr(unsigned char arr[], int size);
 

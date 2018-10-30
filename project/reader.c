@@ -1,5 +1,6 @@
 #include "reader.h"
 
+int DEBUG = FALSE;
 int received = FALSE;
 int success = FALSE;
 
@@ -16,7 +17,7 @@ int main(int argc, char **argv)
   }
 
   // initialize application layer
-  Application *app = initApplicationLayer(argv[1], argv[2]);
+  Application *app = initApplicationLayer(argv[1]);
 
   // open connection
   if (!llopen(app->fd))
@@ -43,7 +44,7 @@ int main(int argc, char **argv)
 
 // --------------- APPLICATION LAYER --------------------
 
-Application *initApplicationLayer(char *port, char *filepath)
+Application *initApplicationLayer(char *port)
 {
   Application *app = (Application *)malloc(sizeof(Application));
 
@@ -57,28 +58,14 @@ Application *initApplicationLayer(char *port, char *filepath)
     perror(port);
     exit(-1);
   }
-  app->filepath = filepath;
 
-  app->current_package = 0;
+  // initialize package numeration
+  app->package = 0;
 
   // initialize datalink layer
   dl = initDataLinkLayer();
 
   return app;
-}
-
-void printProgressBar(Application *app) {
-  int i = 0;
-
-  float percentage = ((float) app->current_package / app->totalpackages) * 100;
-  printf("\rProgress: [");
-  for (; i < PROGRESS_BAR_DIM; i++) {
-    if (i < percentage / (100 / PROGRESS_BAR_DIM))
-    printf("#");
-    else
-    printf(" ");
-  }
-  printf("] %d%%", (int) percentage);
 }
 
 void destroyApplicationLayer(Application *app)
@@ -115,19 +102,19 @@ int receiveFile(Application *app)
     if (endPackageReceived(app->fd, startPackage, package, packageSize))
       break;
 
-    
-
     parseDataPackage(package, &packageSize);
     memcpy(filebuf + idx, package, packageSize);
     idx += packageSize;
-    app->current_package++;
+
+    app->package++;
     printProgressBar(app);
   }
 
-  saveFile(app->filepath, app->filesize, filebuf);
+  saveFile(app->filename, app->filesize, filebuf);
 
   // deallocate buffer storing file data
   free(filebuf);
+
   return 1;
 }
 
@@ -143,26 +130,26 @@ unsigned char *parseStartPackage(Application *app)
   }
 
   // save file size
-  off_t filesizeSize = startPackage[2];
+  off_t filesizeLength = startPackage[2];
 
   int i = 0;
   app->filesize = 0;
-  for (; i < filesizeSize; i++)
-    app->filesize |= (startPackage[3 + i] << (8 * filesizeSize - 8 * (i + 1)));
+  for (; i < filesizeLength; i++)
+    app->filesize |= (startPackage[3 + i] << (8 * filesizeLength - 8 * (i + 1)));
 
   // save file path
-  int filepathSize = (int)startPackage[8];
-  app->filepath = (unsigned char *)malloc(filepathSize + 1);
+  int filenameLength = (int)startPackage[8];
+  app->filename = (unsigned char *)malloc(filenameLength + 1);
 
   // building the c-string for filepath
   int j = 0;
-  for (; j < filepathSize; j++)
-    app->filepath[j] = startPackage[9 + j];
-  app->filepath[j] = '\0';
+  for (; j < filenameLength; j++)
+    app->filename[j] = startPackage[9 + j];
+  app->filename[j] = '\0';
 
-  app->totalpackages = app->filesize / PACKAGE_SIZE;
+  app->totalPackages = app->filesize / PACKAGE_SIZE;
   if (app->filesize % PACKAGE_SIZE != 0)
-     app->totalpackages++;
+    app->totalPackages++;
 
   return startPackage;
 }
@@ -172,7 +159,7 @@ int endPackageReceived(int fd, unsigned char *start, unsigned char *package, int
   // if received package is equal to the start package
   if (package[0] == C_END && !memcmp(start + 1, package + 1, packageSize - 1))
   {
-    printf("receiveFile: END package received!\n");
+    printf("\nreceiveFile: END package received!\n");
     return TRUE;
   }
   else
@@ -270,34 +257,6 @@ int llopen(int fd)
   return TRUE;
 }
 
-void reject(int fd){
-	unsigned char control[5];
-	if (dl->frame == 0)
-          {
-            // send C_REJ1
-            control[0] = FLAG;
-            control[1] = A_TRANSMITTER;
-            control[2] = C_REJ1;
-            control[3] = control[1] ^ control[2];
-            control[4] = FLAG;
-            write(fd, control, 5);
-          }
-          else if (dl->frame == 1)
-          {
-            // send C_REJ0
-            control[0] = FLAG;
-            control[1] = A_TRANSMITTER;
-            control[2] = C_REJ0;
-            control[3] = control[1] ^ control[2];
-            control[4] = FLAG;
-            write(fd, control, 5);
-          }
-
-
-	  success = FALSE;
-          //printf("llread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
-}
-
 int llclose(int fd)
 {
   // wait for DISC control frame
@@ -322,140 +281,9 @@ int llclose(int fd)
   return TRUE;
 }
 
-unsigned char *llread(int fd, int *frameSize)
-{
-  int stuffedByte = 0;
-  unsigned char control[5], byte, c;
-
-  unsigned char *frameI = (unsigned char *)malloc(*frameSize);
-
-  State state = INITIAL;
-  received = FALSE, success = FALSE;
-
-  while (!received)
-  {
-    read(fd, &byte, 1);
-
-    switch (state)
-    {
-    case INITIAL:
-      if (byte == FLAG)
-        state = STATE_FLAG;
-      break;
-    case STATE_FLAG:
-      if (byte == A_TRANSMITTER)
-        state = STATE_A;
-      else if (byte == FLAG)
-        state = STATE_FLAG;
-      else
-        state = INITIAL;
-      break;
-    case STATE_A:
-      if (byte == C_0)
-      {
-        c = byte;
-        dl->frame = 0;
-        state = STATE_C;
-      }
-      else if (byte == C_1)
-      {
-        c = byte;
-        dl->frame = 1;
-        state = STATE_C;
-      }
-      else if (byte == FLAG)
-        state = STATE_FLAG;
-      else
-        state = INITIAL;
-      break;
-    case STATE_C:
-      if (byte == (A_TRANSMITTER ^ c))
-        state = STATE_BCC;
-      else if (byte == FLAG)
-        state = STATE_FLAG;
-      else
-        state = INITIAL;
-      break;
-    case STATE_BCC:
-      // if FLAG is received
-      if (byte == FLAG)
-      {
-        // if BCC2 was correct
-        if (receivedBcc2(frameI, *frameSize))
-        {
-          if (dl->frame == 0)
-          {
-            // send C_RR1
-            control[0] = FLAG;
-            control[1] = A_TRANSMITTER;
-            control[2] = C_RR1;
-            control[3] = control[1] ^ control[2];
-            control[4] = FLAG;
-            write(fd, control, 5);
-          }
-          else if (dl->frame == 1)
-          {
-            // send C_RR0
-            control[0] = FLAG;
-            control[1] = A_TRANSMITTER;
-            control[2] = C_RR0;
-            control[3] = control[1] ^ control[2];
-            control[4] = FLAG;
-            write(fd, control, 5);
-          }
-
-          // if RR was sent
-          if (dl->frame == dl->expectedFrame)
-          {
-            dl->expectedFrame ^= 1;
-            success = TRUE;
-            //printf("llread: RR%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
-          }
-        }
-        else
-        {
-          reject(fd);		
-        }
-
-        received = TRUE;
-      }
-      // if ESCAPE is received
-      else if (byte == ESCAPE)
-        stuffedByte = 1;
-      else if (stuffedByte)
-      {
-        frameI = (unsigned char *)realloc(frameI, ++(*frameSize));
-        frameI[*frameSize - 1] = byte ^ 0x20;
-        stuffedByte = 0;
-      }
-      else
-      {
-        frameI = (unsigned char *)realloc(frameI, ++(*frameSize));
-        frameI[*frameSize - 1] = byte;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-
-  // remove bcc2 from data frame
-  frameI = (unsigned char *)realloc(frameI, --(*frameSize));
-
-  if (success)
-  {
-    return frameI;
-  }
-  else
-  {
-    free(frameI);
-    return NULL;
-  }
-}
-
 unsigned char *readControlFrame(int fd, unsigned char c)
 {
-  unsigned char *control = (unsigned char *)malloc(5);
+  unsigned char *control = (unsigned char *)malloc(5 + sizeof(unsigned char));
   unsigned char byte;
 
   State state = INITIAL;
@@ -539,6 +367,177 @@ unsigned char *readControlFrame(int fd, unsigned char c)
   return control;
 }
 
+unsigned char *llread(int fd, int *frameSize)
+{
+  int stuffedByte = 0;
+  unsigned char control[5], byte, c;
+
+  unsigned char *frameI = (unsigned char *)malloc(*frameSize);
+
+  State state = INITIAL;
+  received = FALSE, success = FALSE;
+
+  while (!received)
+  {
+    read(fd, &byte, 1);
+
+    switch (state)
+    {
+    case INITIAL:
+      if (byte == FLAG)
+        state = STATE_FLAG;
+      break;
+    case STATE_FLAG:
+      if (byte == A_TRANSMITTER)
+        state = STATE_A;
+      else if (byte == FLAG)
+        state = STATE_FLAG;
+      else
+        state = INITIAL;
+      break;
+    case STATE_A:
+      if (byte == C_0)
+      {
+        c = byte;
+        dl->frame = 0;
+        state = STATE_C;
+      }
+      else if (byte == C_1)
+      {
+        c = byte;
+        dl->frame = 1;
+        state = STATE_C;
+      }
+      else if (byte == FLAG)
+        state = STATE_FLAG;
+      else
+        state = INITIAL;
+      break;
+    case STATE_C:
+      if (byte == (A_TRANSMITTER ^ c))
+        state = STATE_BCC;
+      else if (byte == FLAG)
+        state = STATE_FLAG;
+      else
+        state = INITIAL;
+      break;
+    case STATE_BCC:
+      // if FLAG is received
+      if (byte == FLAG)
+      {
+        // if BCC2 was correct
+        if (receivedBcc2(frameI, *frameSize))
+          acceptFrame(fd);
+        else
+          rejectFrame(fd);
+
+        received = TRUE;
+      }
+      // if ESCAPE is received
+      else if (byte == ESCAPE)
+        stuffedByte = 1;
+      else if (stuffedByte)
+      {
+        frameI = (unsigned char *)realloc(frameI, ++(*frameSize));
+        frameI[*frameSize - 1] = byte ^ 0x20;
+        stuffedByte = 0;
+      }
+      else
+      {
+        frameI = (unsigned char *)realloc(frameI, ++(*frameSize));
+        frameI[*frameSize - 1] = byte;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
+  // remove bcc2 from data frame
+  frameI = (unsigned char *)realloc(frameI, --(*frameSize));
+
+  if (success)
+  {
+    return frameI;
+  }
+  else
+  {
+    free(frameI);
+    return NULL;
+  }
+}
+
+void acceptFrame(int fd)
+{
+  unsigned char control[5];
+
+  if (dl->frame == 0)
+  {
+    // send C_RR1
+    control[0] = FLAG;
+    control[1] = A_TRANSMITTER;
+    control[2] = C_RR1;
+    control[3] = control[1] ^ control[2];
+    control[4] = FLAG;
+
+    write(fd, control, 5);
+  }
+  else if (dl->frame == 1)
+  {
+    // send C_RR0
+    control[0] = FLAG;
+    control[1] = A_TRANSMITTER;
+    control[2] = C_RR0;
+    control[3] = control[1] ^ control[2];
+    control[4] = FLAG;
+
+    write(fd, control, 5);
+  }
+
+  // if RR was sent
+  if (dl->frame == dl->expectedFrame)
+  {
+    dl->expectedFrame ^= 1;
+    success = TRUE;
+
+    if (DEBUG)
+      printf("\nllread: RR%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
+  }
+}
+
+void rejectFrame(int fd)
+{
+  unsigned char control[5];
+
+  if (dl->frame == 0)
+  {
+    // send C_REJ1
+    control[0] = FLAG;
+    control[1] = A_TRANSMITTER;
+    control[2] = C_REJ1;
+    control[3] = control[1] ^ control[2];
+    control[4] = FLAG;
+
+    write(fd, control, 5);
+  }
+  else if (dl->frame == 1)
+  {
+    // send C_REJ0
+    control[0] = FLAG;
+    control[1] = A_TRANSMITTER;
+    control[2] = C_REJ0;
+    control[3] = control[1] ^ control[2];
+    control[4] = FLAG;
+
+    write(fd, control, 5);
+  }
+
+  success = FALSE;
+
+  if (DEBUG)
+    printf("\nllread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
+}
+
 // -------------- END OF DATA LINK LAYER ----------------
 
 // --------------------- UTILS --------------------------
@@ -560,10 +559,10 @@ int receivedBcc2(unsigned char *frameI, int frameSize)
     return FALSE;
 }
 
-int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf)
+int saveFile(unsigned char *filename, off_t filesize, unsigned char *filebuf)
 {
   // open new file
-  FILE *file = fopen(filepath, "wb");
+  FILE *file = fopen(filename, "wb");
   if (file == NULL)
   {
     perror("saveFile: could not open new file!\n");
@@ -572,17 +571,35 @@ int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf)
 
   if (fwrite(filebuf, sizeof(unsigned char), filesize, file) == -1)
   {
-    printf("saveFile: error writing to file %s!\n", filepath);
+    printf("saveFile: error writing to file %s!\n", filename);
     return -1;
   }
 
   if (fclose(file) == -1)
   {
-    printf("saveFile: error closing file %s!\n", filepath);
+    printf("saveFile: error closing file %s!\n", filename);
     return -1;
   }
 
   return 1;
+}
+
+void printProgressBar(Application *app)
+{
+  float percentage = ((float)app->package / app->totalPackages) * 100;
+
+  printf("\rProgress: [");
+
+  int i = 0;
+  for (; i < PROGRESS_BAR_DIM; i++)
+  {
+    if (i < percentage / (100 / PROGRESS_BAR_DIM))
+      printf("#");
+    else
+      printf(" ");
+  }
+
+  printf("] %d%%", (int)percentage);
 }
 
 void printArr(unsigned char arr[], int size)
