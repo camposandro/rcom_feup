@@ -77,7 +77,6 @@ Application *initApplicationLayer(char *port, char *filepath)
 
   // start frame numbers
   app->package = 0;
-  app->totalpackages = 0;
 
   // initialize datalink layer
   dl = initDataLinkLayer();
@@ -91,6 +90,20 @@ void destroyApplicationLayer(Application *app)
 
   // free application layer
   free(app);
+}
+
+void printProgressBar(Application *app) {
+  int i = 0;
+
+  float percentage = ((float) app->package / app->totalpackages) * 100;
+  printf("\rProgress: [");
+  for (; i < PROGRESS_BAR_DIM; i++) {
+    if (i < percentage / (100 / PROGRESS_BAR_DIM))
+    printf("#");
+    else
+    printf(" ");
+  }
+  printf("] %d%%", (int) percentage);
 }
 
 int sendFile(Application *app)
@@ -107,7 +120,10 @@ int sendFile(Application *app)
   struct stat metadata;
   stat((char *)app->filepath, &metadata);
   off_t filesize = metadata.st_size;
-  printf("[sendFile] - file %s of size %ld bytes.\n", app->filepath, filesize);
+  //printf("[sendFile] - file %s of size %ld bytes.\n", app->filepath, filesize);
+
+  app->totalpackages = filesize / PACKAGE_SIZE;
+  if (filesize % PACKAGE_SIZE != 0) app->totalpackages++;
 
   // allocate array to store file data
   unsigned char *filebuf = (unsigned char *)malloc(filesize);
@@ -123,7 +139,9 @@ int sendFile(Application *app)
     unsigned char *package = getBufPackage(filebuf, &idx, &packageSize, filesize);
     if (sendDataPackage(app, package, packageSize, filesize) == -1)
       break;
+    printProgressBar(app);
   }
+  printf("\n");
 
   // send end control package
   sendControlPackage(app->fd, C_END, filesize, app->filepath);
@@ -229,7 +247,6 @@ unsigned char *getDataPackage(Application *app, unsigned char *buf, int *package
     dataPackage[4 + i] = buf[i];
 
   app->package++;
-  app->totalpackages++;
   *packagesize += 4;
 
   return dataPackage;
@@ -241,12 +258,12 @@ int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t
 
   if (llwrite(app->fd, dataPackage, packagesize) == -1)
   {
-    printf("[sendfile] - could not send data package number %d!\n", app->totalpackages);
+    //printf("[sendDataPackage] - could not send data package number %d!\n", app->package);
     return -1;
   }
   else
   {
-    printf("[sendfile] - data package number %d sent!\n", app->totalpackages);
+    //printf("[sendDataPackage] - data package number %d sent!\n", app->package);
     return 1;
   }
 }
@@ -572,6 +589,8 @@ int llclose(int fd)
     write(fd, ua, 5);
     printf("[llclose] - UA sent: ");
     printArr(ua, 5);
+
+    printf("[llclose] - connection successfully closed!\n");
   }
 
   if (tcsetattr(fd, TCSANOW, &dl->oldtio) == -1)
@@ -582,12 +601,12 @@ int llclose(int fd)
 
   if (close(fd) == -1)
   {
-    printf("[llclose] - failed to close connection!\n");
+    printf("[llclose] - failed to close serial port!\n");
     return FALSE;
   }
   else
   {
-    printf("[llclose] - connection successfully closed!\n");
+    printf("[llclose] - serial port successfully closed!\n");
     return TRUE;
   }
 }
@@ -648,18 +667,12 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
   stuff(buf, &bufsize);
   if (bufsize != totalsize - 6)
   {
-    totalsize = bufsize + 6;
     // new totalsize, after stuffing data
-    frame = (unsigned char *)realloc(frame, totalsize);
+    totalsize = bufsize + 6;
+  }
 
-    for (i = 0; i < bufsize; i++)
-      frame[4 + i] = buf[i];
-  }
-  else
-  {
-    for (i = 0; i < bufsize; i++)
-      frame[4 + i] = buf[i];
-  }
+  for (i = 0; i < bufsize; i++)
+    frame[4 + i] = buf[i];
 
   // bcc2 stuffing
   stuff(bcc2, &bcc2size);
@@ -687,8 +700,8 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
   {
     // send frame
     write(fd, frame, totalsize);
-    printf("[llwrite] - frame sent: ");
-    printArr(frame, totalsize);
+    //printf("[llwrite] - frame sent: ");
+    //printArr(frame, totalsize);
 
     alarm(TIMEOUT);
 
@@ -697,13 +710,13 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
     if ((c == C_RR0 && dl->frame == 1) || (c == C_RR1 && dl->frame == 0))
     {
       received = TRUE;
-      printf("[llwrite] - RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+      //printf("[llwrite] - RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
       dl->frame ^= 1;
     }
     else if (c == C_REJ0 || c == C_REJ1)
     {
       received = FALSE;
-      printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+      //printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
     }
 
     alarm(0);

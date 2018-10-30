@@ -15,8 +15,8 @@
 #define FALSE 0
 #define TRUE 1
 
-#define TIMEOUT 3   // number of seconds for timeout
-#define MAX_TRIES 3 // number of maximum timeout tries
+#define TIMEOUT 2   // number of seconds for timeout
+#define MAX_TRIES 4 // number of maximum timeout tries
 
 // ESCAPE flag
 #define ESCAPE 0x7d
@@ -47,6 +47,8 @@
 #define C_RR1 0x85
 #define C_REJ0 0x01
 #define C_REJ1 0x81
+
+#define PROGRESS_BAR_DIM  20
 
 typedef enum
 {
