@@ -14,8 +14,7 @@
 #define FALSE 0
 #define TRUE 1
 
-#define DEBUG printf("DEBUG: %s, %s, %d\n", __FILE__, __FUNCTION__, __LINE__);
-
+// ESCAPE flag
 #define ESCAPE 0x7d
 
 // data package flags
@@ -39,6 +38,16 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
+typedef enum
+{
+    INITIAL,
+    STATE_FLAG,
+    STATE_A,
+    STATE_C,
+    STATE_BCC,
+    STATE_FINAL
+} State;
+
 typedef struct
 {
     int fd;                  // serial port descriptor
@@ -52,3 +61,45 @@ typedef struct
     int expectedFrame;             // expected frame number
     struct termios oldtio, newtio; // structs storing terminal configurations
 } DataLink;
+
+// --------------- APPLICATION LAYER --------------------
+
+Application *initApplicationLayer(char *port, char *filepath);
+
+void destroyApplicationLayer(Application *app);
+
+int receiveFile(Application *app);
+
+unsigned char *parseStartPackage(Application *app);
+
+int endPackageReceived(int fd, unsigned char *start, unsigned char *package, int packageSize);
+
+void parseDataPackage(unsigned char *package, int *packageSize);
+
+// ----------- END OF APPLICATION LAYER -----------------
+
+// ---------------- DATA LINK LAYER ---------------------
+
+DataLink *initDataLinkLayer();
+
+void destroyDataLinkLayer();
+
+int llopen(int fd);
+
+int llclose(int fd);
+
+unsigned char *llread(int fd, int *frameSize);
+
+unsigned char *readControlFrame(int fd, unsigned char c);
+
+// -------------- END OF DATA LINK LAYER ----------------
+
+// --------------------- UTILS --------------------------
+
+int receivedBcc2(unsigned char *frameI, int frameSize);
+
+int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf);
+
+void printArr(unsigned char arr[], int size);
+
+// ------------------ END OF UTILS ----------------------

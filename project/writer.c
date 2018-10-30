@@ -1,85 +1,260 @@
 #include "writer.h"
 
-int RECEIVED = FALSE;
+int received = FALSE;
 
 DataLink *dl;
 
-typedef enum
+int main(int argc, char **argv)
 {
-  INITIAL,
-  STATE_FLAG,
-  STATE_A,
-  STATE_C,
-  STATE_BCC
-} State;
+  time_t start, end;
 
-// ----------------- UTILS ----------------------
-void stuff(unsigned char *buf, int *bufsize)
-{
-  unsigned char *stuffedBuf = (unsigned char *)malloc(*bufsize);
-
-  int i = 0;
-  for (; i < *bufsize; i++)
+  if ((argc < 3) ||
+      ((strcmp("/dev/ttyS0", argv[1]) != 0) &&
+       (strcmp("/dev/ttyS1", argv[1]) != 0)))
   {
-    if (buf[i] == FLAG)
-    {
-      stuffedBuf = (unsigned char *)realloc(stuffedBuf, ++(*bufsize));
-      stuffedBuf[i] = ESCAPE;
-      stuffedBuf[i + 1] = FLAG ^ 0x20;
-      i += 2;
-    }
-    else if (buf[i] == ESCAPE)
-    {
-      stuffedBuf = (unsigned char *)realloc(stuffedBuf, ++(*bufsize));
-      stuffedBuf[i] = ESCAPE;
-      stuffedBuf[i + 1] = ESCAPE ^ 0x20;
-      i += 2;
-    }
-    else
-    {
-      stuffedBuf[i] = buf[i];
-    }
+    printf("Usage:\tnserial SerialPort File\n\tex: nserial /dev/ttyS1 Penguin.gif\n");
+    exit(1);
   }
 
-  *buf = *stuffedBuf;
-  free(stuffedBuf);
+  // initialize application layer
+  Application *app = initApplicationLayer(argv[1], argv[2]);
+
+  // install alarm handler
+  installAlarm();
+
+  // start transfer timing
+  time(&start);
+
+  // open connection
+  if (!llopen(app->fd))
+  {
+    printf("[llopen] - failed to open connection!\n");
+    return -1;
+  }
+
+  // opens file to transmit
+  sendFile(app);
+
+  // close connection
+  if (!llclose(app->fd))
+  {
+    printf("[llclose] - failed to close connection!\n");
+    return -1;
+  }
+
+  // stop transfer timing
+  time(&end);
+
+  double elapsed = difftime(end, start);
+  printf("# File transfered in %.2f seconds!\n", elapsed);
+
+  uninstallAlarm();
+
+  // destroy application layer
+  destroyApplicationLayer(app);
+
+  return 0;
 }
 
-void printArr(unsigned char arr[], int size)
+// --------------- APPLICATION LAYER --------------------
+Application *initApplicationLayer(char *port, char *filepath)
 {
+  Application *app = (Application *)malloc(sizeof(Application));
+
+  /*
+  Open serial port device for reading and writing and not as controlling tty
+  because we don't want to get killed if linenoise sends CTRL-C.
+  */
+  app->fd = open(port, O_RDWR | O_NOCTTY);
+  if (app->fd < 0)
+  {
+    perror(port);
+    exit(-1);
+  }
+
+  // store file path
+  app->filepath = filepath;
+
+  // start frame numbers
+  app->package = 0;
+  app->totalpackages = 0;
+
+  // initialize datalink layer
+  dl = initDataLinkLayer();
+
+  return app;
+}
+
+void destroyApplicationLayer(Application *app)
+{
+  destroyDataLinkLayer();
+
+  // free application layer
+  free(app);
+}
+
+int sendFile(Application *app)
+{
+  // open file
+  FILE *file = fopen(app->filepath, "rb");
+  if (file == NULL)
+  {
+    perror("[openfile] - could not read file!\n");
+    exit(-1);
+  }
+
+  // extract file metadata
+  struct stat metadata;
+  stat((char *)app->filepath, &metadata);
+  off_t filesize = metadata.st_size;
+  printf("[sendFile] - file %s of size %ld bytes.\n", app->filepath, filesize);
+
+  // allocate array to store file data
+  unsigned char *filebuf = (unsigned char *)malloc(filesize);
+  fread(filebuf, sizeof(unsigned char), filesize, file);
+
+  // send start control package
+  sendControlPackage(app->fd, C_START, filesize, app->filepath);
+
+  off_t idx = 0;
+  int packageSize = PACKAGE_SIZE;
+  while (idx < filesize)
+  {
+    unsigned char *package = getBufPackage(filebuf, &idx, &packageSize, filesize);
+    if (sendDataPackage(app, package, packageSize, filesize) == -1)
+      break;
+  }
+
+  // send end control package
+  sendControlPackage(app->fd, C_END, filesize, app->filepath);
+
+  // free file buf auxiliary array
+  free(filebuf);
+
+  // close file
+  if (fclose(file) == -1)
+  {
+    printf("[closefile] - could not close file!\n");
+    return -1;
+  }
+
+  return 1;
+}
+
+unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filepath, int *packagesize)
+{
+  *packagesize = 9 + strlen(filepath);
+  unsigned char *package = (unsigned char *)malloc(*packagesize);
+
+  if (!(c == C_START || c == C_END))
+  {
+    printf("[getControlPackage] - invalid control package state!\n");
+    return NULL;
+  }
+
+  // package control state
+  package[0] = c;
+
+  // package first argument - filesize
+  package[1] = T1;
+  package[2] = L1;
+  package[3] = (filesize >> 24) & 0xFF; // 1st byte
+  package[4] = (filesize >> 16) & 0xFF; // 2nd byte
+  package[5] = (filesize >> 8) & 0xFF;  // 3rd byte
+  package[6] = filesize & 0xFF;         // 4th byte
+
+  // package second argument - filepath
+  package[7] = T2;
+  package[8] = strlen(filepath);
   int i;
-  for (i = 0; i < size; i++)
-    printf("%x ", arr[i]);
-  printf("\n");
-}
-// --------------- END OF UTILS --------------------
+  for (i = 0; i < strlen(filepath); i++)
+    package[i + 9] = filepath[i];
 
-// ----------- ALARM HANDLING -----------------
-void timeoutHandler(int signo)
+  return package;
+}
+
+int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
 {
-  if (signo == SIGALRM)
-    dl->timeout = 1;
+  if (!(c == C_START || c == C_END))
+  {
+    printf("[sendControlPackage] - invalid control package state!\n");
+    return -1;
+  }
+
+  // create start package with arguments filesize and filepath
+  int packagesize = 0;
+  unsigned char *package = getControlPackage(c, filesize, filepath, &packagesize);
+
+  // send it via serial port
+  if (llwrite(fd, package, packagesize) != -1)
+  {
+    if (c == C_START)
+      printf("[sendControlPackage] - START package sent!\n");
+    else if (c == C_END)
+      printf("[sendControlPackage] - END package sent!\n");
+
+    return 1;
+  }
+  else
+  {
+    printf("[sendControlPackage] - could not send control package!\n");
+    return -1;
+  }
 }
 
-void installAlarm()
+unsigned char *getBufPackage(unsigned char *filebuf, off_t *idx, int *packageSize, off_t filesize)
 {
-  struct sigaction action;
-  action.sa_handler = timeoutHandler;
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
-  sigaction(SIGALRM, &action, NULL);
+  if (*idx + *packageSize > filesize)
+    *packageSize = filesize - *idx;
+
+  unsigned char *package = (unsigned char *)malloc(*packageSize);
+  memcpy(package, filebuf + *idx, *packageSize);
+  *idx += *packageSize;
+
+  return package;
 }
 
-void uninstallAlarm()
+unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize)
 {
-  struct sigaction action;
-  action.sa_handler = NULL;
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
-  sigaction(SIGALRM, &action, NULL);
+  unsigned char *dataPackage = (unsigned char *)malloc(*packagesize + 4);
+
+  // construct dataFrame
+  dataPackage[0] = DATAFRAME_C;
+  dataPackage[1] = app->package % 255;
+  dataPackage[2] = (int)filesize / 256; // filesize MSB
+  dataPackage[3] = (int)filesize % 256; // filesize LSB
+
+  int i = 0;
+  for (; i < *packagesize; i++)
+    dataPackage[4 + i] = buf[i];
+
+  app->package++;
+  app->totalpackages++;
+  *packagesize += 4;
+
+  return dataPackage;
 }
 
-// ----------- DATA LINK LAYER -----------------
+int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize)
+{
+  unsigned char *dataPackage = getDataPackage(app, buf, &packagesize, filesize);
+
+  if (llwrite(app->fd, dataPackage, packagesize) == -1)
+  {
+    printf("[sendfile] - could not send data package number %d!\n", app->totalpackages);
+    return -1;
+  }
+  else
+  {
+    printf("[sendfile] - data package number %d sent!\n", app->totalpackages);
+    return 1;
+  }
+}
+
+// ----------- END OF APPLICATION LAYER -----------------
+
+// ---------------- DATA LINK LAYER ---------------------
+
 DataLink *initDataLinkLayer()
 {
   // allocate data link struct
@@ -105,7 +280,7 @@ unsigned char *readControlFrame(int fd, unsigned char c)
   unsigned char byte;
 
   State state = INITIAL;
-  while (!RECEIVED && !dl->timeout)
+  while (!received && !dl->timeout)
   {
     read(fd, &byte, 1);
 
@@ -151,7 +326,7 @@ unsigned char *readControlFrame(int fd, unsigned char c)
       }
       break;
     case STATE_C:
-      if (byte == control[1] ^ control[2])
+      if (byte == (control[1] ^ control[2]))
       {
         control[3] = control[1] ^ control[2];
         state = STATE_BCC;
@@ -169,7 +344,7 @@ unsigned char *readControlFrame(int fd, unsigned char c)
     case STATE_BCC:
       if (byte == FLAG)
       {
-        RECEIVED = TRUE;
+        received = TRUE;
         control[4] = FLAG;
       }
       else
@@ -189,7 +364,7 @@ unsigned char readControlC(int fd)
   unsigned char byte;
 
   State state = INITIAL;
-  while (!RECEIVED && !dl->timeout)
+  while (!received && !dl->timeout)
   {
     read(fd, &byte, 1);
 
@@ -235,7 +410,7 @@ unsigned char readControlC(int fd)
       }
       break;
     case STATE_C:
-      if (byte == control[1] ^ control[2])
+      if (byte == (control[1] ^ control[2]))
       {
         control[3] = control[1] ^ control[2];
         state = STATE_BCC;
@@ -253,7 +428,7 @@ unsigned char readControlC(int fd)
     case STATE_BCC:
       if (byte == FLAG)
       {
-        RECEIVED = TRUE;
+        received = TRUE;
         control[4] = FLAG;
       }
       else
@@ -264,7 +439,7 @@ unsigned char readControlC(int fd)
     }
   }
 
-  if (RECEIVED)
+  if (received)
   {
     unsigned char *frameC = (unsigned char *)malloc(sizeof(unsigned char));
     *frameC = control[2];
@@ -282,7 +457,7 @@ int llopen(int fd)
 
   if (tcgetattr(fd, &dl->oldtio) == -1)
   { /* save current port settings */
-    perror("llopen - tcgetattr error!\n");
+    perror("[llopen] - tcgetattr error!\n");
     exit(-1);
   }
 
@@ -305,27 +480,26 @@ int llopen(int fd)
 
   if (tcsetattr(fd, TCSANOW, &dl->newtio) == -1)
   {
-    perror("llopen - tcsetattr error!\n");
+    perror("[llopen] - tcsetattr error!\n");
     exit(-1);
   }
-  printf("llopen - new termios structure set\n");
+  printf("[llopen] - new termios structure set\n");
 
-  State state = INITIAL;
   setup[0] = FLAG;
   setup[1] = A_TRANSMITTER;
   setup[2] = C_SET;
   setup[3] = setup[1] ^ setup[2]; //BCC
   setup[4] = FLAG;
 
-  RECEIVED = FALSE;
+  received = FALSE;
   dl->ntries = 0;
 
   unsigned char *ua;
-  while (!RECEIVED && dl->ntries < MAX_TRIES)
+  while (!received && dl->ntries < MAX_TRIES)
   {
     // writes SET to serial port
     write(fd, setup, 5);
-    printf("llopen - SET sent: ");
+    printf("[llopen] - SET sent: ");
     printArr(setup, 5);
 
     alarm(TIMEOUT);
@@ -339,16 +513,16 @@ int llopen(int fd)
     dl->ntries++;
   }
 
-  if (RECEIVED)
+  if (received)
   {
-    printf("llopen - UA received: ");
+    printf("[llopen] - UA received: ");
     printArr(ua, 5);
-    printf("llopen - connection opened successfully!\n");
+    printf("[llopen] - connection opened successfully!\n");
     return TRUE;
   }
   else
   {
-    printf("llopen - failed to open connection!\n");
+    printf("[llopen] - failed to open connection!\n");
     return FALSE;
   }
 }
@@ -357,27 +531,26 @@ int llclose(int fd)
 {
   unsigned char disc[5], ua[5];
 
-  State state = INITIAL;
   disc[0] = FLAG;
   disc[1] = A_TRANSMITTER;
   disc[2] = C_DISC;
   disc[3] = disc[1] ^ disc[2]; //BCC
   disc[4] = FLAG;
 
-  RECEIVED = FALSE;
+  received = FALSE;
   dl->ntries = 0;
 
-  while (!RECEIVED && dl->ntries < MAX_TRIES)
+  while (!received && dl->ntries < MAX_TRIES)
   {
     /* writes SET to serial port */
     write(fd, disc, 5);
-    printf("llclose - DISC sent: ");
+    printf("[llclose] - DISC sent: ");
     printArr(disc, 5);
 
     alarm(TIMEOUT);
 
     // read disc confirmation frame
-    unsigned char *disc = readControlFrame(fd, C_DISC);
+    readControlFrame(fd, C_DISC);
 
     alarm(0);
 
@@ -385,9 +558,9 @@ int llclose(int fd)
     dl->ntries++;
   }
 
-  if (RECEIVED)
+  if (received)
   {
-    printf("llclose - DISC received: ");
+    printf("[llclose] - DISC received: ");
     printArr(disc, 5);
 
     ua[0] = FLAG;
@@ -397,26 +570,57 @@ int llclose(int fd)
     ua[4] = FLAG;
 
     write(fd, ua, 5);
-    printf("llclose - UA sent: ");
+    printf("[llclose] - UA sent: ");
     printArr(ua, 5);
   }
 
   if (tcsetattr(fd, TCSANOW, &dl->oldtio) == -1)
   {
-    perror("llclose - tcsetattr error!\n");
+    perror("[llclose] - tcsetattr error!\n");
     exit(-1);
   }
 
   if (close(fd) == -1)
   {
-    printf("llclose - failed to close connection!\n");
+    printf("[llclose] - failed to close connection!\n");
     return FALSE;
   }
   else
   {
-    printf("llclose - connection successfully closed!\n");
+    printf("[llclose] - connection successfully closed!\n");
     return TRUE;
   }
+}
+
+void stuff(unsigned char *buf, int *bufsize)
+{
+  unsigned char *stuffedBuf = (unsigned char *)malloc(*bufsize);
+
+  int i = 0, j = 0;
+  for (; j < *bufsize; i++, j++)
+  {
+    if (buf[i] == FLAG)
+    {
+      stuffedBuf = (unsigned char *)realloc(stuffedBuf, ++(*bufsize));
+      stuffedBuf[j] = ESCAPE;
+      stuffedBuf[j + 1] = FLAG ^ 0x20;
+      j++;
+    }
+    else if (buf[i] == ESCAPE)
+    {
+      stuffedBuf = (unsigned char *)realloc(stuffedBuf, ++(*bufsize));
+      stuffedBuf[j] = ESCAPE;
+      stuffedBuf[j + 1] = ESCAPE ^ 0x20;
+      j++;
+    }
+    else
+    {
+      stuffedBuf[j] = buf[i];
+    }
+  }
+
+  memcpy(buf, stuffedBuf, *bufsize);
+  free(stuffedBuf);
 }
 
 int llwrite(int fd, unsigned char *buf, int bufsize)
@@ -476,15 +680,15 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
   frame[4 + bufsize + bcc2size] = FLAG;
 
   // send frame and wait confirmation
-  RECEIVED = FALSE;
+  received = FALSE;
   dl->ntries = 0;
 
-  while (!RECEIVED && dl->ntries < MAX_TRIES)
+  while (!received && dl->ntries < MAX_TRIES)
   {
     // send frame
     write(fd, frame, totalsize);
-    //printf("llwrite - frame sent: ");
-    //printArr(frame, totalsize);
+    printf("[llwrite] - frame sent: ");
+    printArr(frame, totalsize);
 
     alarm(TIMEOUT);
 
@@ -492,14 +696,14 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
     unsigned char c = readControlC(fd);
     if ((c == C_RR0 && dl->frame == 1) || (c == C_RR1 && dl->frame == 0))
     {
-      RECEIVED = TRUE;
-      printf("llwrite: RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+      received = TRUE;
+      printf("[llwrite] - RR%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
       dl->frame ^= 1;
     }
     else if (c == C_REJ0 || c == C_REJ1)
     {
-      RECEIVED = FALSE;
-      printf("llwrite: REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
+      received = FALSE;
+      printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
     }
 
     alarm(0);
@@ -508,261 +712,46 @@ int llwrite(int fd, unsigned char *buf, int bufsize)
     dl->timeout = 0;
   }
 
-  if (RECEIVED)
+  if (received)
     return 1;
   else
     return -1;
 }
-// ------------ END OF DATA LINK LAYER ----------------
 
-// -------------- APPLICATION LAYER -------------------
-Application *initApplicationLayer(char *port, char *filepath)
+// -------------- END OF DATA LINK LAYER ----------------
+
+// --------------------- UTILS --------------------------
+
+void timeoutHandler(int signo)
 {
-  Application *app = (Application *)malloc(sizeof(Application));
-
-  /*
-  Open serial port device for reading and writing and not as controlling tty
-  because we don't want to get killed if linenoise sends CTRL-C.
-  */
-  app->fd = open(port, O_RDWR | O_NOCTTY);
-  if (app->fd < 0)
-  {
-    perror(port);
-    exit(-1);
-  }
-
-  // store file path
-  app->filepath = filepath;
-
-  // start frame numbers
-  app->package = 0;
-  app->totalpackages = 0;
-
-  // initialize datalink layer
-  dl = initDataLinkLayer();
-
-  return app;
+  if (signo == SIGALRM)
+    dl->timeout = 1;
 }
 
-void destroyApplicationLayer(Application *app)
+void installAlarm()
 {
-  destroyDataLinkLayer();
-
-  // free application layer
-  free(app);
+  struct sigaction action;
+  action.sa_handler = timeoutHandler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+  sigaction(SIGALRM, &action, NULL);
 }
 
-unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize)
+void uninstallAlarm()
 {
-  unsigned char *dataPackage = (unsigned char *)malloc(*packagesize + 4);
-
-  // construct dataFrame
-  dataPackage[0] = DATAFRAME_C;
-  dataPackage[1] = app->package % 255;
-  dataPackage[2] = (int) filesize / 256; // filesize MSB
-  dataPackage[3] = (int) filesize % 256; // filesize LSB
-
-  int i = 0;
-  for (; i < *packagesize; i++)
-    dataPackage[4 + i] = buf[i];
-
-  app->package++;
-  app->totalpackages++;
-  *packagesize += 4;
-
-  return dataPackage;
+  struct sigaction action;
+  action.sa_handler = NULL;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+  sigaction(SIGALRM, &action, NULL);
 }
 
-int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize)
+void printArr(unsigned char arr[], int size)
 {
-  unsigned char *dataPackage = getDataPackage(app, buf, &packagesize, filesize);
-
-  if (llwrite(app->fd, dataPackage, packagesize) == -1)
-  {
-    printf("sendfile: could not send data package number %d!\n", app->totalpackages);
-    return -1;
-  }
-  else
-  {
-    printf("sendfile: data package number %d sent!\n", app->totalpackages);
-    return 1;
-  }
-}
-
-unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filepath, int *packagesize)
-{
-  *packagesize = 9 + strlen(filepath);
-  unsigned char *package = (unsigned char *)malloc(*packagesize);
-
-  if (!(c == C_START || c == C_END))
-  {
-    printf("getControlPackage: invalid control package state!\n");
-    return NULL;
-  }
-
-  // package control state
-  package[0] = c;
-
-  // package first argument - filesize
-  package[1] = T1;
-  package[2] = L1;
-  package[3] = (filesize >> 24) & 0xFF; // 1st byte
-  package[4] = (filesize >> 16) & 0xFF; // 2nd byte
-  package[5] = (filesize >> 8) & 0xFF;  // 3rd byte
-  package[6] = filesize & 0xFF;         // 4th byte
-
-  // package second argument - filepath
-  package[7] = T2;
-  package[8] = strlen(filepath);
   int i;
-  for (i = 0; i < strlen(filepath); i++)
-    package[i + 9] = filepath[i];
-
-  return package;
+  for (i = 0; i < size; i++)
+    printf("%x ", arr[i]);
+  printf("\n");
 }
 
-int sendControlPackage(int fd, int c, off_t filesize, char *filepath)
-{
-  if (!(c == C_START || c == C_END))
-  {
-    printf("sendControlPackage: invalid control package state!\n");
-    return -1;
-  }
-
-  // create start package with arguments filesize and filepath
-  int packagesize = 0;
-  unsigned char *package = getControlPackage(c, filesize, filepath, &packagesize);
-
-  // send it via serial port
-  if (llwrite(fd, package, packagesize) != -1)
-  {
-    if (c == C_START)
-      printf("sendControlPackage: START package sent!\n");
-    else if (c == C_END)
-      printf("sendControlPackage: END package sent!\n");
-
-    return 1;
-  }
-  else
-  {
-    printf("sendControlPackage: could not send control package!\n");
-    return -1;
-  }
-}
-
-unsigned char *getBufPackage(unsigned char *filebuf, off_t *idx, int *packageSize, off_t filesize)
-{
-  if (*idx + *packageSize > filesize)
-    *packageSize = filesize - *idx;
-
-  unsigned char *package = (unsigned char *)malloc(*packageSize);
-  memcpy(package, filebuf + *idx, *packageSize);
-  *idx += *packageSize;
-
-  printf("package: ");
-  printArr(package, *packageSize);
-  printf("idx = %ld\n", *idx);
-
-  return package;
-}
-
-int sendFile(Application *app)
-{
-  // open file
-  FILE *file = fopen(app->filepath, "rb");
-  if (file == NULL)
-  {
-    perror("openfile - could not read file!\n");
-    exit(-1);
-  }
-
-  // extract file metadata
-  struct stat metadata;
-  stat((char *)app->filepath, &metadata);
-  off_t filesize = metadata.st_size;
-  printf("sendFile - file %s of size %ld bytes.\n", app->filepath, filesize);
-
-  // allocate array to store file data
-  unsigned char *filebuf = (unsigned char *)malloc(filesize);
-  fread(filebuf, sizeof(unsigned char), filesize, file);
-
-  // send start control package
-  sendControlPackage(app->fd, C_START, filesize, app->filepath);
-
-  off_t idx = 0;
-  int packageSize = PACKAGE_SIZE;
-  while (idx < filesize)
-  {
-    unsigned char *package = getBufPackage(filebuf, &idx, &packageSize, filesize);
-    if (sendDataPackage(app, package, packageSize, filesize) == -1)
-      break;
-  }
-
-  // send end control package
-  sendControlPackage(app->fd, C_END, filesize, app->filepath);
-
-  // free file buf auxiliary array
-  free(filebuf);
-
-  // close file
-  if (fclose(file) == -1)
-  {
-    printf("closefile: could not close file!\n");
-    return -1;
-  }
-
-  return 1;
-}
-// ----------- END OF APPLICATION LAYER -----------------
-
-int main(int argc, char **argv)
-{
-  time_t start, end;
-
-  if ((argc < 3) ||
-      ((strcmp("/dev/ttyS0", argv[1]) != 0) &&
-       (strcmp("/dev/ttyS1", argv[1]) != 0)))
-  {
-    printf("Usage:\tnserial SerialPort File\n\tex: nserial /dev/ttyS1 Penguin.gif\n");
-    exit(1);
-  }
-
-  // initialize application layer
-  Application *app = initApplicationLayer(argv[1], argv[2]);
-
-  // install alarm handler
-  installAlarm();
-
-  // start transfer timing
-  time(&start);
-
-  // open connection
-  if (!llopen(app->fd))
-  {
-    printf("llopen: failed to open connection!\n");
-    return -1;
-  }
-
-  // opens file to transmit
-  sendFile(app);
-
-  // close connection
-  if (!llclose(app->fd))
-  {
-    printf("llclose: failed to close connection!\n");
-    return -1;
-  }
-
-  // stop transfer timing
-  time(&end);
-
-  double elapsed = difftime(end, start);
-  printf("# File transfered in %.2f seconds!\n", elapsed);
-
-  uninstallAlarm();
-
-  // destroy application layer
-  destroyApplicationLayer(app);
-
-  return 0;
-}
+// ------------------ END OF UTILS ----------------------

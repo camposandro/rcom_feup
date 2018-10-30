@@ -1,73 +1,179 @@
 #include "reader.h"
 
-int RECEIVED = FALSE;
-int SUCCESS = FALSE;
+int received = FALSE;
+int success = FALSE;
 
 DataLink *dl;
 
-typedef enum
+int main(int argc, char **argv)
 {
-  INITIAL,
-  STATE_FLAG,
-  STATE_A,
-  STATE_C,
-  STATE_BCC,
-  STATE_FINAL
-} State;
+  if ((argc < 2) ||
+      ((strcmp("/dev/ttyS0", argv[1]) != 0) &&
+       (strcmp("/dev/ttyS1", argv[1]) != 0)))
+  {
+    printf("Usage:\tnserial SerialPort\n\tex: nserial /dev/ttyS1\n");
+    exit(1);
+  }
 
-// ----------------- UTILS ----------------------
-void printArr(unsigned char arr[], int size)
-{
-  int i;
-  for (i = 0; i < size; i++)
-    printf("%x ", arr[i]);
-  printf("\n");
+  // initialize application layer
+  Application *app = initApplicationLayer(argv[1], argv[2]);
+
+  // open connection
+  if (!llopen(app->fd))
+  {
+    printf("llopen: failed to open connection!\n");
+    return -1;
+  }
+
+  // receives file being transmitted
+  receiveFile(app);
+
+  // close connection
+  if (!llclose(app->fd))
+  {
+    printf("llclose: failed to close connection!\n");
+    return -1;
+  }
+
+  // destroy application layer
+  destroyApplicationLayer(app);
+
+  return 0;
 }
 
-int receivedBcc2(unsigned char *frameI, int frameSize)
+// --------------- APPLICATION LAYER --------------------
+
+Application *initApplicationLayer(char *port, char *filepath)
 {
-  if (frameSize == 0)
-    return FALSE;
+  Application *app = (Application *)malloc(sizeof(Application));
 
-  unsigned char bcc2 = frameI[0];
+  /*
+  Open serial port device for reading and writing and not as controlling tty
+  because we don't want to get killed if linenoise sends CTRL-C.
+  */
+  app->fd = open(port, O_RDWR | O_NOCTTY);
+  if (app->fd < 0)
+  {
+    perror(port);
+    exit(-1);
+  }
+  app->filepath = filepath;
 
-  int i = 1;
-  for (; i < frameSize - 1; i++)
-    bcc2 ^= frameI[i];
+  // initialize datalink layer
+  dl = initDataLinkLayer();
 
-  if (frameI[frameSize - 1] == bcc2)
+  return app;
+}
+
+void destroyApplicationLayer(Application *app)
+{
+  destroyDataLinkLayer();
+
+  // free application layer
+  free(app);
+}
+
+int receiveFile(Application *app)
+{
+  // receive first control package
+  unsigned char *startPackage = parseStartPackage(app);
+  if (startPackage != NULL)
+    printf("receiveFile: START package received!\n");
+  else
+    return -1;
+
+  // allocate array to store received file data
+  unsigned char *filebuf = (unsigned char *)malloc(app->filesize);
+
+  off_t idx = 0;
+  unsigned char *package;
+
+  while (TRUE)
+  {
+    int packageSize = 0;
+    package = llread(app->fd, &packageSize);
+    if (package == NULL)
+      continue;
+
+    // if end package is received
+    if (endPackageReceived(app->fd, startPackage, package, packageSize))
+      break;
+
+    parseDataPackage(package, &packageSize);
+    memcpy(filebuf + idx, package, packageSize);
+    idx += packageSize;
+  }
+
+  saveFile(app->filepath, app->filesize, filebuf);
+
+  // deallocate buffer storing file data
+  free(filebuf);
+  return 1;
+}
+
+unsigned char *parseStartPackage(Application *app)
+{
+  int packageSize = 0;
+  unsigned char *startPackage = llread(app->fd, &packageSize);
+
+  if (startPackage == NULL || startPackage[0] != C_START)
+  {
+    printf("parseStartPackage: package is not START package!\n");
+    return NULL;
+  }
+
+  // save file size
+  off_t filesizeSize = startPackage[2];
+
+  int i = 0;
+  app->filesize = 0;
+  for (; i < filesizeSize; i++)
+    app->filesize |= (startPackage[3 + i] << (8 * filesizeSize - 8 * (i + 1)));
+
+  // save file path
+  int filepathSize = (int)startPackage[8];
+  app->filepath = (unsigned char *)malloc(filepathSize + 1);
+
+  // building the c-string for filepath
+  int j = 0;
+  for (; j < filepathSize; j++)
+    app->filepath[j] = startPackage[9 + j];
+  app->filepath[j] = '\0';
+
+  return startPackage;
+}
+
+int endPackageReceived(int fd, unsigned char *start, unsigned char *package, int packageSize)
+{
+  // if received package is equal to the start package
+  if (package[0] == C_END && !memcmp(start + 1, package + 1, packageSize - 1))
+  {
+    printf("receiveFile: END package received!\n");
     return TRUE;
+  }
   else
     return FALSE;
 }
 
-int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf)
+void parseDataPackage(unsigned char *package, int *packageSize)
 {
-  // open new file
-  FILE *file = fopen(filepath, "wb");
-  if (file == NULL)
-  {
-    perror("saveFile: could not open new file!\n");
-    exit(-1);
-  }
+  *packageSize -= 4;
+  unsigned char *data = (unsigned char *)malloc(*packageSize);
 
-  if (fwrite(filebuf, sizeof(unsigned char), filesize, file) == -1)
-  {
-    printf("saveFile: error writing to file %s!\n", filepath);
-    return -1;
-  }
+  int i = 0;
+  for (; i < *packageSize; i++)
+    data[i] = package[4 + i];
 
-  if (fclose(file) == -1)
-  {
-    printf("saveFile: error closing file %s!\n", filepath);
-    return -1;
-  }
+  package = (unsigned char *)realloc(package, *packageSize);
+  memcpy(package, data, *packageSize);
 
-  return 1;
+  free(data);
 }
-// --------------- END OF UTILS --------------------
 
-// ----------- DATA LINK LAYER -----------------
+// ----------- END OF APPLICATION LAYER -----------------
+
+// ---------------- DATA LINK LAYER ---------------------
+
 DataLink *initDataLinkLayer()
 {
   // allocate data link struct
@@ -84,92 +190,6 @@ void destroyDataLinkLayer()
 {
   // free datalink layer
   free(dl);
-}
-
-unsigned char *readControlFrame(int fd, unsigned char c)
-{
-  unsigned char *control = (unsigned char *)malloc(5);
-  unsigned char byte;
-
-  State state = INITIAL;
-  RECEIVED = FALSE;
-
-  while (!RECEIVED)
-  {
-    read(fd, &byte, 1);
-
-    switch (state)
-    {
-    case INITIAL:
-      if (byte == FLAG)
-      {
-        control[0] = FLAG;
-        state = STATE_FLAG;
-      }
-      break;
-    case STATE_FLAG:
-      if (byte == A_TRANSMITTER)
-      {
-        control[1] = A_TRANSMITTER;
-        state = STATE_A;
-      }
-      else if (byte == FLAG)
-      {
-        control[0] = FLAG;
-        state = STATE_FLAG;
-      }
-      else
-      {
-        state = INITIAL;
-      }
-      break;
-    case STATE_A:
-      if (byte == c)
-      {
-        control[2] = c;
-        state = STATE_C;
-      }
-      else if (byte == FLAG)
-      {
-        control[0] = FLAG;
-        state = STATE_FLAG;
-      }
-      else
-      {
-        state = INITIAL;
-      }
-      break;
-    case STATE_C:
-      if (byte == control[1] ^ control[2])
-      {
-        control[3] = control[1] ^ control[2];
-        state = STATE_BCC;
-      }
-      else if (byte == FLAG)
-      {
-        control[0] = FLAG;
-        state = STATE_FLAG;
-      }
-      else
-      {
-        state = INITIAL;
-      }
-      break;
-    case STATE_BCC:
-      if (byte == FLAG)
-      {
-        RECEIVED = TRUE;
-        control[4] = FLAG;
-      }
-      else
-        state = INITIAL;
-      break;
-    default:
-      break;
-    }
-  }
-
-  return control;
 }
 
 int llopen(int fd)
@@ -258,9 +278,9 @@ unsigned char *llread(int fd, int *frameSize)
   unsigned char *frameI = (unsigned char *)malloc(*frameSize);
 
   State state = INITIAL;
-  RECEIVED = FALSE, SUCCESS = FALSE;
+  received = FALSE, success = FALSE;
 
-  while (!RECEIVED)
+  while (!received)
   {
     read(fd, &byte, 1);
 
@@ -336,7 +356,7 @@ unsigned char *llread(int fd, int *frameSize)
           if (dl->frame == dl->expectedFrame)
           {
             dl->expectedFrame ^= 1;
-            SUCCESS = TRUE;
+            success = TRUE;
             printf("llread: RR%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
           }
         }
@@ -363,11 +383,11 @@ unsigned char *llread(int fd, int *frameSize)
             write(fd, control, 5);
           }
 
-          SUCCESS = FALSE;
+          success = FALSE;
           printf("llread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
         }
 
-        RECEIVED = TRUE;
+        received = TRUE;
       }
       // if ESCAPE is received
       else if (byte == ESCAPE)
@@ -392,9 +412,7 @@ unsigned char *llread(int fd, int *frameSize)
   // remove bcc2 from data frame
   frameI = (unsigned char *)realloc(frameI, --(*frameSize));
 
-  printf("framsize = %d\n", *frameSize);
-
-  if (SUCCESS)
+  if (success)
   {
     return frameI;
   }
@@ -405,175 +423,144 @@ unsigned char *llread(int fd, int *frameSize)
   }
 }
 
-// ------------ END OF DATA LINK LAYER ----------------
-
-// -------------- APPLICATION LAYER -------------------
-Application *initApplicationLayer(char *port, char *filepath)
+unsigned char *readControlFrame(int fd, unsigned char c)
 {
-  Application *app = (Application *)malloc(sizeof(Application));
+  unsigned char *control = (unsigned char *)malloc(5);
+  unsigned char byte;
 
-  /*
-  Open serial port device for reading and writing and not as controlling tty
-  because we don't want to get killed if linenoise sends CTRL-C.
-  */
-  app->fd = open(port, O_RDWR | O_NOCTTY);
-  if (app->fd < 0)
+  State state = INITIAL;
+  received = FALSE;
+
+  while (!received)
   {
-    perror(port);
-    exit(-1);
+    read(fd, &byte, 1);
+
+    switch (state)
+    {
+    case INITIAL:
+      if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      break;
+    case STATE_FLAG:
+      if (byte == A_TRANSMITTER)
+      {
+        control[1] = A_TRANSMITTER;
+        state = STATE_A;
+      }
+      else if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      else
+      {
+        state = INITIAL;
+      }
+      break;
+    case STATE_A:
+      if (byte == c)
+      {
+        control[2] = c;
+        state = STATE_C;
+      }
+      else if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      else
+      {
+        state = INITIAL;
+      }
+      break;
+    case STATE_C:
+      if (byte == (control[1] ^ control[2]))
+      {
+        control[3] = control[1] ^ control[2];
+        state = STATE_BCC;
+      }
+      else if (byte == FLAG)
+      {
+        control[0] = FLAG;
+        state = STATE_FLAG;
+      }
+      else
+      {
+        state = INITIAL;
+      }
+      break;
+    case STATE_BCC:
+      if (byte == FLAG)
+      {
+        received = TRUE;
+        control[4] = FLAG;
+      }
+      else
+        state = INITIAL;
+      break;
+    default:
+      break;
+    }
   }
-  app->filepath = filepath;
 
-  // initialize datalink layer
-  dl = initDataLinkLayer();
-
-  return app;
+  return control;
 }
 
-void destroyApplicationLayer(Application *app)
+// -------------- END OF DATA LINK LAYER ----------------
+
+// --------------------- UTILS --------------------------
+
+int receivedBcc2(unsigned char *frameI, int frameSize)
 {
-  destroyDataLinkLayer();
+  if (frameSize == 0)
+    return FALSE;
 
-  // free application layer
-  free(app);
-}
+  unsigned char bcc2 = frameI[0];
 
-unsigned char *parseStartPackage(Application *app)
-{
-  int packageSize = 0;
-  unsigned char *startPackage = llread(app->fd, &packageSize);
+  int i = 1;
+  for (; i < frameSize - 1; i++)
+    bcc2 ^= frameI[i];
 
-  if (startPackage == NULL || startPackage[0] != C_START)
-  {
-    printf("parseStartPackage: package is not START package!\n");
-    return NULL;
-  }
-
-  // save file size
-  off_t filesizeSize = startPackage[2];
-
-  int i = 0;
-  app->filesize = 0;
-  for (; i < filesizeSize; i++)
-    app->filesize |= (startPackage[3 + i] << (8 * filesizeSize - 8 * (i + 1)));
-
-  printf("filesize = %ld\n", app->filesize);
-
-  // save file path
-  int filepathSize = (int)startPackage[8];
-  /*app->filepath = (unsigned char *)malloc(filepathSize + 1);
-
-  // building the c-string for filepath
-  int j = 0;
-  for (; j < filepathSize; j++)
-    app->filepath[j] = startPackage[9 + j];
-  app->filepath[j] = '\0';*/
-  app->filepath ="penguin2.gif";
-
-  printf("path = %s\n", app->filepath);
-
-  return startPackage;
-}
-
-void parseDataPackage(unsigned char *package, int *packageSize)
-{
-  *packageSize -= 4;
-  unsigned char *data = (unsigned char *)malloc(*packageSize);
-
-  int i = 0;
-  for (; i < *packageSize; i++)
-    data[i] = package[4 + i];
-
-  package = (unsigned char *)realloc(package, *packageSize);
-  memcpy(package, data, *packageSize);
-
-  free(data);
-}
-
-int endPackageReceived(int fd, unsigned char *start, unsigned char *package, int packageSize)
-{
-  // if received package is equal to the start package
-  if (package[0] == C_END && !memcmp(start + 1, package + 1, packageSize - 1)) {
-    printf("receiveFile: END package received!\n");
+  if (frameI[frameSize - 1] == bcc2)
     return TRUE;
-  }
   else
     return FALSE;
 }
 
-int receiveFile(Application *app)
+int saveFile(unsigned char *filepath, off_t filesize, unsigned char *filebuf)
 {
-  // receive first control package
-  unsigned char *startPackage = parseStartPackage(app);
-  if (startPackage != NULL)
-    printf("receiveFile: START package received!\n");
-  else
-    return -1;
-
-  // allocate array to store received file data
-  unsigned char *filebuf = (unsigned char *)malloc(app->filesize);
-
-  off_t idx = 0;
-  unsigned char *package;
-
-  while (TRUE)
+  // open new file
+  FILE *file = fopen(filepath, "wb");
+  if (file == NULL)
   {
-    int packageSize = 0;
-    package = llread(app->fd, &packageSize);
-    if (package == NULL)
-      continue;
-    //printArr(package, packageSize);
-
-    // if end package is received
-    if (endPackageReceived(app->fd, startPackage, package, packageSize))
-      break;
-
-    parseDataPackage(package, &packageSize);
-    memcpy(filebuf + idx, package, packageSize);
-    idx += packageSize;
+    perror("saveFile: could not open new file!\n");
+    exit(-1);
   }
 
-  saveFile(app->filepath, app->filesize, filebuf);
+  if (fwrite(filebuf, sizeof(unsigned char), filesize, file) == -1)
+  {
+    printf("saveFile: error writing to file %s!\n", filepath);
+    return -1;
+  }
 
-  // deallocate buffer storing file data
-  free(filebuf);
+  if (fclose(file) == -1)
+  {
+    printf("saveFile: error closing file %s!\n", filepath);
+    return -1;
+  }
+
   return 1;
 }
 
-// ----------- END OF APPLICATION LAYER -----------------
-
-int main(int argc, char **argv)
+void printArr(unsigned char arr[], int size)
 {
-  if ((argc < 2) ||
-      ((strcmp("/dev/ttyS0", argv[1]) != 0) &&
-       (strcmp("/dev/ttyS1", argv[1]) != 0)))
-  {
-    printf("Usage:\tnserial SerialPort\n\tex: nserial /dev/ttyS1\n");
-    exit(1);
-  }
-
-  // initialize application layer
-  Application *app = initApplicationLayer(argv[1], argv[2]);
-
-  // open connection
-  if (!llopen(app->fd))
-  {
-    printf("llopen: failed to open connection!\n");
-    return -1;
-  }
-
-  // receives file being transmitted
-  receiveFile(app);
-
-  // close connection
-  if (!llclose(app->fd))
-  {
-    printf("llclose: failed to close connection!\n");
-    return -1;
-  }
-
-  // destroy application layer
-  destroyApplicationLayer(app);
-
-  return 0;
+  int i;
+  for (i = 0; i < size; i++)
+    printf("%x ", arr[i]);
+  printf("\n");
 }
+
+// ------------------ END OF UTILS ----------------------

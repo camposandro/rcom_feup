@@ -15,9 +15,10 @@
 #define FALSE 0
 #define TRUE 1
 
-#define TIMEOUT 3 // number of seconds for timeout
-#define MAX_TRIES 3   // number of maximum timeout tries
+#define TIMEOUT 3   // number of seconds for timeout
+#define MAX_TRIES 3 // number of maximum timeout tries
 
+// ESCAPE flag
 #define ESCAPE 0x7d
 
 // data package flags
@@ -47,6 +48,15 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
+typedef enum
+{
+    INITIAL,
+    STATE_FLAG,
+    STATE_A,
+    STATE_C,
+    STATE_BCC
+} State;
+
 typedef struct
 {
     int fd;            // serial port descriptor
@@ -63,19 +73,27 @@ typedef struct
     struct termios oldtio, newtio; // structs storing terminal configurations
 } DataLink;
 
+// --------------- APPLICATION LAYER --------------------
+
 Application *initApplicationLayer(char *port, char *filepath);
 
 void destroyApplicationLayer(Application *app);
 
-unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize);
-
-int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize);
+int sendFile(Application *app);
 
 unsigned char *getControlPackage(unsigned char c, off_t filesize, char *filepath, int *packagesize);
 
 int sendControlPackage(int fd, int c, off_t filesize, char *filepath);
 
-int sendFile(Application *app);
+unsigned char *getBufPackage(unsigned char *filebuf, off_t *idx, int *packageSize, off_t filesize);
+
+unsigned char *getDataPackage(Application *app, unsigned char *buf, int *packagesize, off_t filesize);
+
+int sendDataPackage(Application *app, unsigned char *buf, int packagesize, off_t filesize);
+
+// ----------- END OF APPLICATION LAYER -----------------
+
+// ---------------- DATA LINK LAYER ---------------------
 
 DataLink *initDataLinkLayer();
 
@@ -89,7 +107,13 @@ int llopen(int fd);
 
 int llclose(int fd);
 
+void stuff(unsigned char *buf, int *bufsize);
+
 int llwrite(int fd, unsigned char *buf, int bufsize);
+
+// -------------- END OF DATA LINK LAYER ----------------
+
+// --------------------- UTILS --------------------------
 
 void timeoutHandler(int signo);
 
@@ -97,6 +121,6 @@ void installAlarm();
 
 void uninstallAlarm();
 
-void stuff(unsigned char *buf, int *bufsize);
-
 void printArr(unsigned char arr[], int size);
+
+// ------------------ END OF UTILS ----------------------
