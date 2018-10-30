@@ -38,6 +38,8 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
+#define PROGRESS_BAR_DIM 20
+
 typedef enum
 {
     INITIAL,
@@ -53,6 +55,8 @@ typedef struct
     int fd;                  // serial port descriptor
     unsigned char *filepath; // path of received file
     off_t filesize;          // filesize to be received
+    int current_package;     // current package
+    int totalpackages;	     //totalpackages
 } Application;
 
 typedef struct

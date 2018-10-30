@@ -59,10 +59,26 @@ Application *initApplicationLayer(char *port, char *filepath)
   }
   app->filepath = filepath;
 
+  app->current_package = 0;
+
   // initialize datalink layer
   dl = initDataLinkLayer();
 
   return app;
+}
+
+void printProgressBar(Application *app) {
+  int i = 0;
+
+  float percentage = ((float) app->current_package / app->totalpackages) * 100;
+  printf("\rProgress: [");
+  for (; i < PROGRESS_BAR_DIM; i++) {
+    if (i < percentage / (100 / PROGRESS_BAR_DIM))
+    printf("#");
+    else
+    printf(" ");
+  }
+  printf("] %d%%", (int) percentage);
 }
 
 void destroyApplicationLayer(Application *app)
@@ -99,9 +115,13 @@ int receiveFile(Application *app)
     if (endPackageReceived(app->fd, startPackage, package, packageSize))
       break;
 
+    
+
     parseDataPackage(package, &packageSize);
     memcpy(filebuf + idx, package, packageSize);
     idx += packageSize;
+    app->current_package++;
+    printProgressBar(app);
   }
 
   saveFile(app->filepath, app->filesize, filebuf);
@@ -139,6 +159,10 @@ unsigned char *parseStartPackage(Application *app)
   for (; j < filepathSize; j++)
     app->filepath[j] = startPackage[9 + j];
   app->filepath[j] = '\0';
+
+  app->totalpackages = app->filesize / PACKAGE_SIZE;
+  if (app->filesize % PACKAGE_SIZE != 0)
+     app->totalpackages++;
 
   return startPackage;
 }
@@ -244,6 +268,34 @@ int llopen(int fd)
 
   printf("llopen - connection successfully opened!\n");
   return TRUE;
+}
+
+void reject(int fd){
+	unsigned char control[5];
+	if (dl->frame == 0)
+          {
+            // send C_REJ1
+            control[0] = FLAG;
+            control[1] = A_TRANSMITTER;
+            control[2] = C_REJ1;
+            control[3] = control[1] ^ control[2];
+            control[4] = FLAG;
+            write(fd, control, 5);
+          }
+          else if (dl->frame == 1)
+          {
+            // send C_REJ0
+            control[0] = FLAG;
+            control[1] = A_TRANSMITTER;
+            control[2] = C_REJ0;
+            control[3] = control[1] ^ control[2];
+            control[4] = FLAG;
+            write(fd, control, 5);
+          }
+
+
+	  success = FALSE;
+          //printf("llread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
 }
 
 int llclose(int fd)
@@ -357,34 +409,12 @@ unsigned char *llread(int fd, int *frameSize)
           {
             dl->expectedFrame ^= 1;
             success = TRUE;
-            printf("llread: RR%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
+            //printf("llread: RR%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
           }
         }
         else
         {
-          if (dl->frame == 0)
-          {
-            // send C_REJ1
-            control[0] = FLAG;
-            control[1] = A_TRANSMITTER;
-            control[2] = C_REJ1;
-            control[3] = control[1] ^ control[2];
-            control[4] = FLAG;
-            write(fd, control, 5);
-          }
-          else if (dl->frame == 1)
-          {
-            // send C_REJ0
-            control[0] = FLAG;
-            control[1] = A_TRANSMITTER;
-            control[2] = C_REJ0;
-            control[3] = control[1] ^ control[2];
-            control[4] = FLAG;
-            write(fd, control, 5);
-          }
-
-          success = FALSE;
-          printf("llread: REJ%x sent for frame %d!\n", dl->frame ^ 1, dl->frame);
+          reject(fd);		
         }
 
         received = TRUE;
