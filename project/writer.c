@@ -1,6 +1,6 @@
 #include "writer.h"
 
-int DEBUG = FALSE;
+int DEBUG = TRUE;
 int received = FALSE;
 
 DataLink *dl;
@@ -718,6 +718,7 @@ int llwrite(int fd, unsigned char *buf, int bufSize)
     else if (c == C_REJ0 || c == C_REJ1)
     {
       received = FALSE;
+	  dl->nTries = 0;
 
       if (DEBUG)
         printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);

@@ -15,8 +15,8 @@
 #define FALSE 0
 #define TRUE 1
 
-#define TIMEOUT 2   // number of seconds for timeout
-#define MAX_TRIES 4 // number of maximum timeout tries
+#define TIMEOUT 3   // number of seconds for timeout
+#define MAX_TRIES 3 // number of maximum timeout tries
 
 // ESCAPE flag
 #define ESCAPE 0x7d
@@ -32,7 +32,7 @@
 #define T2 0x01 // filepath parameter type
 
 // information frame flags
-#define PACKAGE_SIZE 255
+#define PACKAGE_SIZE 100
 #define C_0 0x00
 #define C_1 0x40
 
