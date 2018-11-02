@@ -1,6 +1,0 @@
-Trama enviada pelo emissor:
-	Flag (F): 0x7E (01111110)
-	Campo de endereço (A): 0x03 (00000011)
-	Campo de controlo (C): 0x07 (00000111)
-	Block Check Character (BCC): 00000100 ou seja BCC = A^C
-	Flag (F) igual à primeira;
