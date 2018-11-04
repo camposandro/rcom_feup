@@ -1,13 +1,13 @@
 #include "writer.h"
 
-int DEBUG = TRUE;
+int DEBUG = FALSE;
 int received = FALSE;
 
 DataLink *dl;
 
 int main(int argc, char **argv)
 {
-  time_t start, end;
+  struct timespec start, end;
 
   if ((argc < 3) ||
       ((strcmp("/dev/ttyS0", argv[1]) != 0) &&
@@ -24,7 +24,7 @@ int main(int argc, char **argv)
   installAlarm();
 
   // start transfer timing
-  time(&start);
+  clock_gettime(CLOCK_REALTIME, &start);
 
   // open connection
   if (!llopen(app->fd))
@@ -44,9 +44,9 @@ int main(int argc, char **argv)
   }
 
   // stop transfer timing
-  time(&end);
+  clock_gettime(CLOCK_REALTIME, &end);
 
-  double elapsed = difftime(end, start);
+  double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1E9;
   printf("# File transferred in %.2f seconds!\n", elapsed);
 
   uninstallAlarm();
@@ -693,8 +693,13 @@ int llwrite(int fd, unsigned char *buf, int bufSize)
 
   while (!received && dl->nTries < MAX_TRIES)
   {
+    // eventually change BCC1 to simulate errors
+    unsigned char *errorFrame = errorBCC(frame, totalSize);
+    if (memcmp(frame, errorFrame, totalSize) != 0 && DEBUG)
+      printf("\n[llwrite] - error inserted in BCC!\n");
+
     // send frame
-    write(fd, frame, totalSize);
+    write(fd, errorFrame, totalSize);
 
     if (DEBUG)
     {
@@ -718,7 +723,7 @@ int llwrite(int fd, unsigned char *buf, int bufSize)
     else if (c == C_REJ0 || c == C_REJ1)
     {
       received = FALSE;
-	  dl->nTries = 0;
+      dl->nTries = 0;
 
       if (DEBUG)
         printf("[llwrite] - REJ%x received for frame %d.\n", dl->frame ^ 1, dl->frame);
@@ -762,6 +767,26 @@ void uninstallAlarm()
   sigemptyset(&action.sa_mask);
   action.sa_flags = 0;
   sigaction(SIGALRM, &action, NULL);
+}
+
+unsigned char *errorBCC(unsigned char *package, int packageSize)
+{
+  unsigned char *errorPackage = (unsigned char *)malloc(packageSize);
+  memcpy(errorPackage, package, packageSize);
+
+  if ((rand() % 100) < BCC_PE)
+  {
+    // select a random character
+    unsigned char randChar = (unsigned char)('A' + (rand() % 26));
+
+    // insert character in A, C or BCC itself
+    int errorIdx = (rand() % 3) + 1;
+    errorPackage[errorIdx] = randChar;
+
+    return errorPackage;
+  }
+
+  return package;
 }
 
 void printProgressBar(Application *app)

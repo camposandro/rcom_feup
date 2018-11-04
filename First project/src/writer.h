@@ -48,6 +48,10 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
+// BCC1 probability error
+#define BCC_PE 0
+
+// progress bar default dimension
 #define PROGRESS_BAR_DIM 20
 
 typedef enum
@@ -122,6 +126,8 @@ void timeoutHandler(int signo);
 void installAlarm();
 
 void uninstallAlarm();
+
+unsigned char *errorBCC(unsigned char *package, int sizePackage);
 
 void printProgressBar(Application *app);
 

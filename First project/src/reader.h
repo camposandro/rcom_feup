@@ -22,7 +22,7 @@
 #define C_END 0x03   // control package end state byte
 
 // information frame flags
-#define PACKAGE_SIZE 255
+#define PACKAGE_SIZE 100
 #define C_0 0x00
 #define C_1 0x40
 
@@ -38,7 +38,7 @@
 #define C_REJ0 0x01
 #define C_REJ1 0x81
 
-// progress bar
+// progress bar default dimension
 #define PROGRESS_BAR_DIM 20
 
 typedef enum
