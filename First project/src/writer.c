@@ -698,8 +698,13 @@ int llwrite(int fd, unsigned char *buf, int bufSize)
     if (memcmp(frame, errorFrame, totalSize) != 0 && DEBUG)
       printf("\n[llwrite] - error inserted in BCC!\n");
 
+    unsigned char *errorFrame2 = errorBCC2(errorFrame, totalSize);
+    if (memcmp(errorFrame, errorFrame2, totalSize) != 0 && DEBUG) {
+      printf("\n[llwrite] - error inserted in BCC2!\n");
+    }
+
     // send frame
-    write(fd, errorFrame, totalSize);
+    write(fd, errorFrame2, totalSize);
 
     if (DEBUG)
     {
@@ -781,6 +786,26 @@ unsigned char *errorBCC(unsigned char *package, int packageSize)
 
     // insert character in A, C or BCC itself
     int errorIdx = (rand() % 3) + 1;
+    errorPackage[errorIdx] = randChar;
+
+    return errorPackage;
+  }
+
+  return package;
+}
+
+unsigned char *errorBCC2(unsigned char *package, int packageSize)
+{
+  unsigned char *errorPackage = (unsigned char *)malloc(packageSize);
+  memcpy(errorPackage, package, packageSize);
+
+  if ((rand() % 100) < BCC2_PE)
+  {
+    // select a random character
+    unsigned char randChar = (unsigned char)('A' + (rand() % 26));
+
+    // insert character in A, C or BCC itself
+    int errorIdx = (rand() % (packageSize - 5)) + 4;
     errorPackage[errorIdx] = randChar;
 
     return errorPackage;

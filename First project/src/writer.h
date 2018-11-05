@@ -50,6 +50,7 @@
 
 // BCC1 probability error
 #define BCC_PE 0
+#define BCC2_PE 0
 
 // progress bar default dimension
 #define PROGRESS_BAR_DIM 20
@@ -128,6 +129,8 @@ void installAlarm();
 void uninstallAlarm();
 
 unsigned char *errorBCC(unsigned char *package, int sizePackage);
+
+unsigned char *errorBCC2(unsigned char *package, int packageSize);
 
 void printProgressBar(Application *app);
 
