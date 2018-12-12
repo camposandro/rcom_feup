@@ -1,27 +1,60 @@
 #include "download.h"
 
+// test file: ftp://anonymous:anonymous@speedtest.tele2.net/1KB.zip
+
 int main(int argc, char **argv)
 {
+  Sockets sockets;
   struct URLarguments arguments;
 
   if (argc != 2)
   {
-    fprintf(stderr, "[main] usage: ./download ftp://<user>:<password>@<host>/<url-path>\n");
+    fprintf(stderr, "# [main] usage: ./download ftp://<user>:<password>@<host>/<url-path>\n");
     exit(1);
   }
 
+  /*** URL PROCESSING ***/
+
   // parse url argument
   parseURL(argv[1], &arguments);
-  printArguments(arguments);
-
   // parse filename from the file's path
   char *filename = parseFilename(arguments.path);
-  printf("# Filename: %s\n", filename);
+  // get host ip address
+  char *ip = getip(arguments.host);
+
+  /*** FTP CONNECTION HANDLING ***/
+
+  // init ftp connection
+  initConnection(&sockets, ip);
+
+  // login to the server
+  login(&sockets, arguments.user, arguments.pwd);
+
+  // enter pasv
+  enterPasvMode(&sockets);
 
   // free the allocated mem
   freeResources(arguments, filename);
+  // close the open sockets
+  close(sockets.controlSocketFd);
+  close(sockets.dataSocketFd);
 
   return 0;
+}
+
+int initConnection(Sockets *sockets, char *ip)
+{
+  // open login socket
+  sockets->controlSocketFd = openSocket(ip);
+
+  // wait for server response
+  char *responseCode = receiveResponse(sockets->controlSocketFd);
+  // if code is invalid exit
+  if (responseCode[0] != '2')
+  {
+    printf("# [initConnection]: Error connecting to server!\n");
+    exit(0);
+  }
 }
 
 void parseURL(char *url, struct URLarguments *arguments)
@@ -51,7 +84,7 @@ void parseURL(char *url, struct URLarguments *arguments)
       }
       else
       {
-        fprintf(stderr, "[parseURL]: error parsing ftp://\n");
+        fprintf(stderr, "# [parseURL]: Error parsing ftp://\n");
       }
       break;
     case FTP:
@@ -95,10 +128,12 @@ void parseURL(char *url, struct URLarguments *arguments)
       arguments->path[j++] = url[i];
       break;
     default:
-      fprintf(stderr, "[parseURL]: invalid URL state\n");
+      fprintf(stderr, "# [parseURL]: Invalid URL state\n");
       exit(1);
     }
   }
+
+  printArguments(arguments);
 }
 
 char *parseFilename(char *path)
@@ -122,10 +157,12 @@ char *parseFilename(char *path)
     }
   }
 
+  printf("# Filename: %s\n", filename);
+
   return filename;
 }
 
-struct hostent *getip(char *hostname)
+char *getip(char *hostname)
 {
   struct hostent *h;
 
@@ -138,29 +175,167 @@ struct hostent *getip(char *hostname)
         char    **h_addr_list;	A zero-terminated array of network addresses for the host. 
               Host addresses are in Network Byte Order. 
       };
-
-      #define h_addr h_addr_list[0]	The first address in h_addr_list. 
     */
 
   if ((h = gethostbyname(hostname)) == NULL)
   {
-    herror("gethostbyname");
+    herror("# gethostbyname");
     exit(1);
   }
 
-  printf("Host name  : %s\n", h->h_name);
-  printf("IP Address : %s\n", inet_ntoa(*((struct in_addr *)h->h_addr_list[0])));
+  char *ip_addr = inet_ntoa(*((struct in_addr *)h->h_addr));
 
-  return h;
+  printf("# Host name : %s\n", h->h_name);
+  printf("# Host IP Address : %s\n\n", ip_addr);
+
+  return ip_addr;
 }
 
-void printArguments(struct URLarguments arguments)
+int openSocket(char *ip)
+{
+  // socket file descriptor
+  int sockFd;
+  // server struct
+  struct sockaddr_in server_addr;
+
+  /* server address handling */
+  bzero((char *)&server_addr, sizeof(server_addr));
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_addr.s_addr = inet_addr(ip); /* 32 bit Internet address network byte ordered */
+  server_addr.sin_port = htons(FTP_PORT);      /* server TCP port must be network byte ordered */
+
+  /* open an TCP socket */
+  if ((sockFd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+  {
+    perror("# socket()");
+    exit(0);
+  }
+
+  /* connect to the server */
+  if (connect(sockFd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+  {
+    perror("# connect()");
+    exit(0);
+  }
+
+  return sockFd;
+}
+
+char *receiveResponse(int sockfd)
+{
+  char *responseCode = (char *)malloc(3 * sizeof(char));
+
+  char c;
+  int i = 0;
+
+  ResponseState state = READ_CODE;
+  while (state != FINAL)
+  {
+    read(sockfd, &c, 1);
+
+    switch (state)
+    {
+    case READ_CODE:
+      if (c == ' ')
+      {
+        if (i == 3)
+          state = READ_MSG;
+        else
+          i = 0;
+      }
+      else if (isdigit(c) && i < 3)
+        responseCode[i++] = c;
+      break;
+    case READ_MSG:
+      if (c == '\n')
+        state = FINAL;
+      break;
+    default:
+      fprintf(stderr, "# [getResponse]: Invalid response state");
+      break;
+    }
+  }
+
+  printf("# [getResponse]: %s\n\n", responseCode);
+
+  return responseCode;
+}
+
+int login(Sockets *sockets, char *user, char *pwd)
+{
+  char *loginResponse, *passResponse;
+  char *msg = (char *)malloc(sizeof(user) + 5);
+
+  // send user
+  sprintf(msg, "user %s\n", user);
+  printMessage(msg);
+  sendCmd(sockets, msg);
+  printf("# [login]: User sent!\n");
+
+  loginResponse = receiveResponse(sockets->controlSocketFd);
+  if (loginResponse[0] != '3')
+  {
+    printf("# [login]: Error receiving user response!\n");
+    exit(0);
+  }
+
+  // send password
+  sprintf(msg, "pass %s\n", pwd);
+  printMessage(msg);
+  sendCmd(sockets, msg);
+  printf("# [login]: Pass sent!\n");
+
+  passResponse = receiveResponse(sockets->controlSocketFd);
+  if (passResponse[0] != '2')
+  {
+    printf("# [login]: Error receiving pass response!\n");
+    exit(0);
+  }
+
+  return 0;
+}
+
+int enterPasvMode(Sockets *sockets)
+{
+  char *pasvResponse;
+
+  printMessage("pasv");
+  sendCmd(sockets, "pasv\n");
+  printf("# [enterPasvMode]: Entering pasv mode!\n");
+
+  pasvResponse = receiveResponse(sockets->controlSocketFd);
+  if (pasvResponse[0] != '2')
+  {
+    printf("# [enterPasvMode]: Error entering passive mode!\n");
+    exit(0);
+  }
+
+  return 0;
+}
+
+int sendCmd(Sockets *sockets, char *msg)
+{
+  if (write(sockets->controlSocketFd, msg, strlen(msg)) < 0)
+  {
+    perror("# [sendCmd]: Error sending control message\n");
+    return 1;
+  }
+
+  return 0;
+}
+
+void printMessage(char *msg)
+{
+  printf("# %s\n", msg);
+}
+
+void printArguments(struct URLarguments *arguments)
 {
   printf("\nURLarguments:\n");
-  printf("# User: %s\n", arguments.user);
-  printf("# Password: %s\n", arguments.pwd);
-  printf("# Host: %s\n", arguments.host);
-  printf("# Path: %s\n\n", arguments.path);
+  printf("# User: %s\n", arguments->user);
+  printf("# Password: %s\n", arguments->pwd);
+  printf("# Host: %s\n", arguments->host);
+  printf("# Path: %s\n\n", arguments->path);
 }
 
 void freeResources(struct URLarguments arguments, char *filename)
@@ -169,43 +344,5 @@ void freeResources(struct URLarguments arguments, char *filename)
   free(arguments.pwd);
   free(arguments.host);
   free(arguments.path);
-  
   free(filename);
-}
-
-void codigoTCP()
-{
-  int sockfd;
-  struct sockaddr_in server_addr;
-  char buf[] = "Mensagem de teste na travessia da pilha TCP/IP\n";
-  int bytes;
-
-  /*server address handling*/
-  bzero((char *)&server_addr, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = inet_addr(SERVER_ADDR); /*32 bit Internet address network byte ordered*/
-  server_addr.sin_port = htons(SERVER_PORT);            /*server TCP port must be network byte ordered */
-
-  /*open an TCP socket*/
-  if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-  {
-    perror("socket()");
-    exit(0);
-  }
-
-  /*connect to the server*/
-  if (connect(sockfd,
-              (struct sockaddr *)&server_addr,
-              sizeof(server_addr)) < 0)
-  {
-    perror("connect()");
-    exit(0);
-  }
-
-  /*send a string to the server*/
-  bytes = write(sockfd, buf, strlen(buf));
-  printf("Bytes escritos %d\n", bytes);
-
-  close(sockfd);
-  exit(0);
 }

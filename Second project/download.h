@@ -10,7 +10,8 @@
 #include <netdb.h>
 #include <string.h>
 
-#define SERVER_PORT 6000
+#define h_addr h_addr_list[0]
+#define FTP_PORT     21
 #define SERVER_ADDR "192.168.28.96"
 
 /**
@@ -36,6 +37,20 @@ typedef enum URLstate {
 } URLstate;
 
 /**
+ * Sockets file descriptors
+ */
+typedef struct Sockets {
+  int controlSocketFd;
+  int dataSocketFd;
+} Sockets;
+
+typedef enum ResponseState {
+  READ_CODE,
+  READ_MSG,
+  FINAL
+} ResponseState;
+
+/**
  * Parses the URL arguments (USER, PASS, HOST and PATH)
  */
 void parseURL(char *url, struct URLarguments *arguments);
@@ -48,12 +63,22 @@ char* parseFilename(char *path);
 /**
  * Gets the host's ip address according to its name
  */
-struct hostent *getip(char *hostname);
+char *getip(char *hostname);
+
+/**
+ * Handles the creation and the connection to a socket
+ */
+int openSocket(char* serverAddr);
+
+/**
+ * Retrieves the server response code - read in format [%d%d%d][ -]
+ */
+char *receiveResponse(int sockfd);
 
 /**
  * Outputs the URL parsed arguments to the screen
  */
-void printArguments(struct URLarguments arguments);
+void printArguments(struct URLarguments *arguments);
 
 /**
  * Frees the allocated memory
