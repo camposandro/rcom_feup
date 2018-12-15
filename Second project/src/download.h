@@ -59,6 +59,7 @@ typedef enum ResponseState
 {
   READ_CODE,
   READ_MSG,
+  READ_MULTIPLE,
   FINAL
 } ResponseState;
 
@@ -95,6 +96,11 @@ int initConnection(Sockets *sockets, char *ip);
  * Performs login in to the ftp server
  */
 int login(Sockets *sockets, char *user, char *pwd);
+
+/**
+ * Switches to file directory
+ */
+int changeDir(Sockets *sockets, char *filepath);
 
 /**
  * Sets passive mode for file tranfer

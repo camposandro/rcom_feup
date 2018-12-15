@@ -9,7 +9,7 @@ int main(int argc, char **argv)
 
   if (argc != 2)
   {
-    fprintf(stderr, "# [main] usage: ./download ftp://<user>:<password>@<host>/<url-path>\n");
+    fprintf(stderr, "# Usage: ./download ftp://<user>:<password>@<host>/<url-path>\n");
     exit(1);
   }
 
@@ -25,6 +25,9 @@ int main(int argc, char **argv)
 
   // login to the server
   login(&sockets, arguments.user, arguments.pwd);
+
+  // change to file directory
+  changeDir(&sockets, arguments.filepath);
 
   // enter pasv
   enterPasvMode(&sockets);
@@ -68,7 +71,8 @@ void parseURL(char *url, struct URLarguments *arguments)
       }
       else
       {
-        fprintf(stderr, "# [parseURL]: Error parsing ftp://\n");
+        printf("# Error parsing ftp://\n");
+        exit(0);
       }
       break;
     case FTP:
@@ -112,13 +116,29 @@ void parseURL(char *url, struct URLarguments *arguments)
       arguments->filepath[j++] = url[i];
       break;
     default:
-      fprintf(stderr, "# [parseURL]: Invalid URL state\n");
-      exit(1);
+      printf("# Invalid URL state\n");
+      exit(0);
     }
   }
 
   // parse filename from the file's path
   arguments->filename = parseFilename(arguments->filepath);
+
+  // remove filename in filepath
+  char *path, *lastSlash = strrchr(arguments->filepath, '/');
+  if (lastSlash != NULL) 
+  {
+    int index = lastSlash - arguments->filepath;
+
+    path = (char *) malloc(index);
+    memcpy(path, arguments->filepath, index);   
+  } else {
+    // directory is the root
+    path = (char *) malloc(sizeof(char));
+    *path = '.';
+  }
+  free(arguments->filepath);
+  arguments->filepath = path;
   
   // get host ip address
   arguments->hostIp = getip(arguments->hostname);
@@ -147,8 +167,6 @@ char *parseFilename(char *path)
     }
   }
 
-  printf("# Filename: %s\n", filename);
-
   return filename;
 }
 
@@ -163,9 +181,6 @@ char *getip(char *hostname)
   }
 
   char *ip_addr = inet_ntoa(*((struct in_addr *)h->h_addr));
-
-  printf("# Host name : %s\n", h->h_name);
-  printf("# Host IP Address : %s\n\n", ip_addr);
 
   return ip_addr;
 }
@@ -183,7 +198,7 @@ int initConnection(Sockets *sockets, char *ip)
   // if code is invalid exit
   if (response.code[0] != '2')
   {
-    printf("# [initConnection]: Error connecting to server!\n");
+    printf("# Error connecting to server!\n");
     exit(0);
   }
 
@@ -199,28 +214,47 @@ int login(Sockets *sockets, char *user, char *pwd)
   // send user
   sprintf(msg, "user %s\n", user);
   sendCmd(sockets, msg);
-  printf("# [login]: User sent!\n");
+  printf("# User sent!\n");
 
   receiveResponse(&response, sockets->controlSockFd);
   if (response.code[0] != '3')
   {
-    printf("# [login]: Error receiving user response!\n");
+    printf("# Error receiving user response!\n");
     exit(0);
   }
 
   // send password
   sprintf(msg, "pass %s\n", pwd);
   sendCmd(sockets, msg);
-  printf("# [login]: Pass sent!\n");
+  printf("# Pass sent!\n");
 
   receiveResponse(&response, sockets->controlSockFd);
   if (response.code[0]!= '2')
   {
-    printf("# [login]: Error receiving pass response!\n");
+    printf("# Error receiving pass response!\n");
     exit(0);
   }
 
   free(msg);
+
+  return 0;
+}
+
+int changeDir(Sockets *sockets, char *filepath) 
+{
+  ServerResponse response;
+
+  char *msg = (char *)malloc(sizeof(filepath) + 4);
+
+  sprintf(msg, "cwd %s\n", filepath);
+  sendCmd(sockets, msg);
+
+  receiveResponse(&response, sockets->controlSockFd);
+  if (response.code[0]!= '2')
+  {
+    printf("# Error receiving cd response!\n");
+    exit(0);
+  }
 
   return 0;
 }
@@ -230,12 +264,12 @@ int enterPasvMode(Sockets *sockets)
   ServerResponse response;
 
   sendCmd(sockets, "pasv\n");
-  printf("# [enterPasvMode]: Entering pasv mode!\n");
+  printf("# Entering pasv mode!\n");
 
   receiveResponse(&response, sockets->controlSockFd);
   if (response.code[0] != '2')
   {
-    printf("# [enterPasvMode]: Error entering passive mode!\n");
+    printf("# Error entering passive mode!\n");
     exit(0);
   }
 
@@ -255,12 +289,21 @@ int openDataConnection(Sockets *sockets)
 
 void transferFile(Sockets *sockets, char *filename)
 {
+  ServerResponse response;
+
   char *msg = (char *)malloc(sizeof(filename) + 5);
 
   // send retr
   sprintf(msg, "retr %s\n", filename);
   sendCmd(sockets, msg);
-  printf("# [transferFile]: Retr sent!\n");
+  printf("# Retr sent!\n");
+
+  receiveResponse(&response, sockets->controlSockFd);
+  if (response.code[0] != '1')
+  {
+    printf("# Error opening file!\n");
+    exit(0);
+  }
 
   saveFile(sockets->dataSockFd, filename);
 
@@ -313,7 +356,7 @@ int sendCmd(Sockets *sockets, char *msg)
 {
   if (write(sockets->controlSockFd, msg, strlen(msg)) < 0)
   {
-    perror("# [sendCmd]: Error sending control message\n");
+    perror("# Error sending control message\n");
     return 1;
   }
 
@@ -326,7 +369,7 @@ void receiveResponse(ServerResponse *response, int sockfd)
   response->msg = (char *)malloc(0);
 
   char c;
-  int i = 0;
+  int i = 0, j = 0;
 
   ResponseState state = READ_CODE;
   while (state != FINAL)
@@ -336,33 +379,55 @@ void receiveResponse(ServerResponse *response, int sockfd)
     switch (state)
     {
     case READ_CODE:
+      // rserver 3-digit response code
       if (c == ' ')
       {
-        if (i == 3)
+        if (i == 3) {
           state = READ_MSG;
-
-        i = 0;
+          i = 0;
+        } else {
+          printf("# Error receiving server response code!\n");
+          exit(0);
+        }
       }
-      else if (isdigit(c) && i < 3)
-        response->code[i++] = c;
+      else {
+        // multiple line message
+        if (c == '-') {
+          state = READ_MULTIPLE;
+          i = 0;
+        } else if (isdigit(c)) {
+          response->code[i++] = c;
+        }    
+      }
       break;
     case READ_MSG:
+      // reads message
       if (c == '\n')
         state = FINAL;
       else
       {
-        response->msg = realloc(response->msg, i + 1);
-        response->msg[i++] = c;
+        response->msg = realloc(response->msg, j + 1);
+        response->msg[j++] = c;
+      }
+      break;
+    case READ_MULTIPLE:
+      // read response code again
+      if (c == response->code[i]) i++;
+      else if (i == 3) {
+        if (c == ' ') 
+          state = READ_MSG;
+        else if (c == '-')
+          i = 0;
       }
       break;
     default:
-      fprintf(stderr, "# [getResponse]: Invalid response state");
+      fprintf(stderr, "# Invalid response state");
       break;
     }
   }
 
-  printf("# [getResponse] code: %s\n", response->code);
-  printf("# [getResponse] msg: %s\n\n", response->msg);
+  printf("# Response code: %s\n", response->code);
+  printf("# Response msg: %s\n\n", response->msg);
 }
 
 int calculatePort(Sockets *sockets, char *response)
@@ -373,20 +438,20 @@ int calculatePort(Sockets *sockets, char *response)
   if ((sscanf(response, "Entering Passive Mode (%d,%d,%d,%d,%d,%d)",
               &ipPart1, &ipPart2, &ipPart3, &ipPart4, &port1, &port2)) < 0)
   {
-    printf("# [calculatePort]: Error retrieving pasv mode information!\n");
+    printf("# Error retrieving pasv mode information!\n");
     return 1;
   }
 
   if ((sprintf(sockets->serverAddr, "%d.%d.%d.%d", ipPart1, ipPart2, ipPart3, ipPart4)) < 0)
   {
-    printf("# [calculatePort]: Error forming server's ip address!\n");
+    printf("# Error forming server's ip address!\n");
     return 1;
   }
 
   sockets->serverPort = port1 * 256 + port2;
 
   printf("# Server address: %s\n", sockets->serverAddr);
-  printf("# Server port: %d\n", sockets->serverPort);
+  printf("# Server port: %d\n\n", sockets->serverPort);
 
   return 0;
 }
@@ -403,7 +468,7 @@ void saveFile(int fd, char *filename)
 
   fclose(file);
 
-  printf("# [saveFile]: Finished downloading file\n");
+  printf("# Finished downloading file\n");
 }
 
 void printArguments(struct URLarguments *arguments)
