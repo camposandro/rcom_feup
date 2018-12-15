@@ -1,6 +1,10 @@
 #include "download.h"
 
-// test file: ftp://anonymous:anonymous@speedtest.tele2.net/1KB.zip
+/* 
+:TEST FILES:
+ftp://anonymous:anonymous@speedtest.tele2.net/1KB.zip
+ftp://anonymous:anonymous@ftp.up.pt/parrot/README.html
+*/
 
 int main(int argc, char **argv)
 {
@@ -39,7 +43,7 @@ int main(int argc, char **argv)
   transferFile(&sockets, arguments.filename);
 
   // free the allocated mem
-  freeResources(&arguments,&sockets);
+  freeResources(&arguments, &sockets);
 
   return 0;
 }
@@ -126,20 +130,22 @@ void parseURL(char *url, struct URLarguments *arguments)
 
   // remove filename in filepath
   char *path, *lastSlash = strrchr(arguments->filepath, '/');
-  if (lastSlash != NULL) 
+  if (lastSlash != NULL)
   {
     int index = lastSlash - arguments->filepath;
 
-    path = (char *) malloc(index);
-    memcpy(path, arguments->filepath, index);   
-  } else {
+    path = (char *)malloc(index);
+    memcpy(path, arguments->filepath, index);
+  }
+  else
+  {
     // directory is the root
-    path = (char *) malloc(sizeof(char));
+    path = (char *)malloc(sizeof(char));
     *path = '.';
   }
   free(arguments->filepath);
   arguments->filepath = path;
-  
+
   // get host ip address
   arguments->hostIp = getip(arguments->hostname);
 
@@ -229,7 +235,7 @@ int login(Sockets *sockets, char *user, char *pwd)
   printf("# Pass sent!\n");
 
   receiveResponse(&response, sockets->controlSockFd);
-  if (response.code[0]!= '2')
+  if (response.code[0] != '2')
   {
     printf("# Error receiving pass response!\n");
     exit(0);
@@ -240,7 +246,7 @@ int login(Sockets *sockets, char *user, char *pwd)
   return 0;
 }
 
-int changeDir(Sockets *sockets, char *filepath) 
+int changeDir(Sockets *sockets, char *filepath)
 {
   ServerResponse response;
 
@@ -250,7 +256,7 @@ int changeDir(Sockets *sockets, char *filepath)
   sendCmd(sockets, msg);
 
   receiveResponse(&response, sockets->controlSockFd);
-  if (response.code[0]!= '2')
+  if (response.code[0] != '2')
   {
     printf("# Error receiving cd response!\n");
     exit(0);
@@ -316,6 +322,7 @@ void freeResources(struct URLarguments *arguments, Sockets *sockets)
   free(arguments->pwd);
   free(arguments->hostname);
   free(arguments->filepath);
+  free(arguments->filename);
 
   // close the open sockets
   close(sockets->controlSockFd);
@@ -382,22 +389,29 @@ void receiveResponse(ServerResponse *response, int sockfd)
       // rserver 3-digit response code
       if (c == ' ')
       {
-        if (i == 3) {
+        if (i == 3)
+        {
           state = READ_MSG;
           i = 0;
-        } else {
+        }
+        else
+        {
           printf("# Error receiving server response code!\n");
           exit(0);
         }
       }
-      else {
+      else
+      {
         // multiple line message
-        if (c == '-') {
+        if (c == '-')
+        {
           state = READ_MULTIPLE;
           i = 0;
-        } else if (isdigit(c)) {
+        }
+        else if (isdigit(c))
+        {
           response->code[i++] = c;
-        }    
+        }
       }
       break;
     case READ_MSG:
@@ -412,9 +426,11 @@ void receiveResponse(ServerResponse *response, int sockfd)
       break;
     case READ_MULTIPLE:
       // read response code again
-      if (c == response->code[i]) i++;
-      else if (i == 3) {
-        if (c == ' ') 
+      if (c == response->code[i])
+        i++;
+      else if (i == 3)
+      {
+        if (c == ' ')
           state = READ_MSG;
         else if (c == '-')
           i = 0;
@@ -461,7 +477,7 @@ void saveFile(int fd, char *filename)
   FILE *file = fopen((char *)filename, "wb");
 
   char bufSocket[SOCKET_BUF_SIZE];
-  
+
   int bytes;
   while ((bytes = read(fd, bufSocket, SOCKET_BUF_SIZE)) > 0)
     bytes = fwrite(bufSocket, bytes, 1, file);
