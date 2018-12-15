@@ -1,0 +1,379 @@
+No.     Time           Source                Destination           Protocol Length Info
+      1 0.000000000    Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 1: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+      2 2.027191000    Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 2: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+      3 4.026363000    Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 3: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+      4 6.031199000    Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 4: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+      5 7.297971000    Cisco_5c:4d:83        Cisco_5c:4d:83        LOOP     60     Reply
+
+Frame 5: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+Ethernet II, Src: Cisco_5c:4d:83 (fc:fb:fb:5c:4d:83), Dst: Cisco_5c:4d:83 (fc:fb:fb:5c:4d:83)
+Configuration Test Protocol (loopback)
+Data (40 bytes)
+
+0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0010  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0020  00 00 00 00 00 00 00 00                           ........
+
+No.     Time           Source                Destination           Protocol Length Info
+      6 7.707697000    G-ProCom_8c:af:9d     Broadcast             ARP      42     Who has 172.16.20.254?  Tell 172.16.20.1
+
+Frame 6: 42 bytes on wire (336 bits), 42 bytes captured (336 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Broadcast (ff:ff:ff:ff:ff:ff)
+Address Resolution Protocol (request)
+
+No.     Time           Source                Destination           Protocol Length Info
+      7 7.708047000    Hewlett-_a6:a4:f1     G-ProCom_8c:af:9d     ARP      60     172.16.20.254 is at 00:22:64:a6:a4:f1
+
+Frame 7: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Address Resolution Protocol (reply)
+
+No.     Time           Source                Destination           Protocol Length Info
+      8 7.708066000    172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=1/256, ttl=64 (reply in 9)
+
+Frame 8: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+      9 7.708322000    172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=1/256, ttl=64 (request in 8)
+
+Frame 9: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     10 8.041251000    Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 10: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+     11 8.708263000    172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=2/512, ttl=64 (reply in 12)
+
+Frame 11: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     12 8.708458000    172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=2/512, ttl=64 (request in 11)
+
+Frame 12: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     13 9.708254000    172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=3/768, ttl=64 (reply in 14)
+
+Frame 13: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     14 9.708405000    172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=3/768, ttl=64 (request in 13)
+
+Frame 14: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     15 10.040703000   Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 15: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+     16 10.708249000   172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=4/1024, ttl=64 (reply in 17)
+
+Frame 16: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     17 10.708445000   172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=4/1024, ttl=64 (request in 16)
+
+Frame 17: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     18 11.708254000   172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=5/1280, ttl=64 (reply in 19)
+
+Frame 18: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     19 11.708407000   172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=5/1280, ttl=64 (request in 18)
+
+Frame 19: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     20 12.045703000   Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 20: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+     21 12.708255000   172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=6/1536, ttl=64 (reply in 22)
+
+Frame 21: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     22 12.708456000   172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=6/1536, ttl=64 (request in 21)
+
+Frame 22: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     23 12.721446000   Hewlett-_a6:a4:f1     G-ProCom_8c:af:9d     ARP      60     Who has 172.16.20.1?  Tell 172.16.20.254
+
+Frame 23: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Address Resolution Protocol (request)
+
+No.     Time           Source                Destination           Protocol Length Info
+     24 12.721460000   G-ProCom_8c:af:9d     Hewlett-_a6:a4:f1     ARP      42     172.16.20.1 is at 00:0f:fe:8c:af:9d
+
+Frame 24: 42 bytes on wire (336 bits), 42 bytes captured (336 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Address Resolution Protocol (reply)
+
+No.     Time           Source                Destination           Protocol Length Info
+     25 13.708253000   172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=7/1792, ttl=64 (reply in 26)
+
+Frame 25: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     26 13.708406000   172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=7/1792, ttl=64 (request in 25)
+
+Frame 26: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     27 14.055623000   Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 27: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+     28 14.708253000   172.16.20.1           172.16.20.254         ICMP     98     Echo (ping) request  id=0x0cff, seq=8/2048, ttl=64 (reply in 29)
+
+Frame 28: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d), Dst: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1)
+Internet Protocol Version 4, Src: 172.16.20.1 (172.16.20.1), Dst: 172.16.20.254 (172.16.20.254)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     29 14.708373000   172.16.20.254         172.16.20.1           ICMP     98     Echo (ping) reply    id=0x0cff, seq=8/2048, ttl=64 (request in 28)
+
+Frame 29: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface 0
+Ethernet II, Src: Hewlett-_a6:a4:f1 (00:22:64:a6:a4:f1), Dst: G-ProCom_8c:af:9d (00:0f:fe:8c:af:9d)
+Internet Protocol Version 4, Src: 172.16.20.254 (172.16.20.254), Dst: 172.16.20.1 (172.16.20.1)
+Internet Control Message Protocol
+
+No.     Time           Source                Destination           Protocol Length Info
+     30 16.055371000   Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 30: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
+
+No.     Time           Source                Destination           Protocol Length Info
+     31 17.305329000   Cisco_5c:4d:83        Cisco_5c:4d:83        LOOP     60     Reply
+
+Frame 31: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+Ethernet II, Src: Cisco_5c:4d:83 (fc:fb:fb:5c:4d:83), Dst: Cisco_5c:4d:83 (fc:fb:fb:5c:4d:83)
+Configuration Test Protocol (loopback)
+Data (40 bytes)
+
+0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0010  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0020  00 00 00 00 00 00 00 00                           ........
+
+No.     Time           Source                Destination           Protocol Length Info
+     32 18.060281000   Cisco_5c:4d:83        Spanning-tree-(for-bridges)_00 STP      60     Conf. Root = 32768/1/fc:fb:fb:5c:4d:80  Cost = 0  Port = 0x8003
+
+Frame 32: 60 bytes on wire (480 bits), 60 bytes captured (480 bits) on interface 0
+IEEE 802.3 Ethernet 
+Logical-Link Control
+Spanning Tree Protocol
+    Protocol Identifier: Spanning Tree Protocol (0x0000)
+    Protocol Version Identifier: Spanning Tree (0)
+    BPDU Type: Configuration (0x00)
+    BPDU flags: 0x00
+    Root Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Root Path Cost: 0
+    Bridge Identifier: 32768 / 1 / fc:fb:fb:5c:4d:80
+    Port identifier: 0x8003
+    Message Age: 0
+    Max Age: 20
+    Hello Time: 2
+    Forward Delay: 15
