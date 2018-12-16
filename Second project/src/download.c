@@ -208,6 +208,8 @@ int initConnection(Sockets *sockets, char *ip)
     exit(0);
   }
 
+  freeResponse(&response);
+
   return 0;
 }
 
@@ -241,6 +243,7 @@ int login(Sockets *sockets, char *user, char *pwd)
     exit(0);
   }
 
+  freeResponse(&response);
   free(msg);
 
   return 0;
@@ -262,6 +265,8 @@ int changeDir(Sockets *sockets, char *filepath)
     exit(0);
   }
 
+  freeResponse(&response);
+
   return 0;
 }
 
@@ -281,6 +286,8 @@ int enterPasvMode(Sockets *sockets)
 
   // get port to connect data socket
   calculatePort(sockets, response.msg);
+
+  freeResponse(&response);
 
   return 0;
 }
@@ -310,6 +317,8 @@ void transferFile(Sockets *sockets, char *filename)
     printf("# Error opening file!\n");
     exit(0);
   }
+
+  freeResponse(&response);
 
   saveFile(sockets->dataSockFd, filename);
 
@@ -379,7 +388,7 @@ void receiveResponse(ServerResponse *response, int sockfd)
   int i = 0, j = 0;
 
   ResponseState state = READ_CODE;
-  
+
   int multipleLineMsg = 0;
 
   while (state != READ_FINAL)
@@ -447,10 +456,16 @@ void receiveResponse(ServerResponse *response, int sockfd)
 
   printf("# Response code: %s\n", response->code);
 
-  if (multipleLineMsg) 
+  if (multipleLineMsg)
     printf("# Response msg: \n%s\n\n", response->msg);
   else
-     printf("# Response msg: %s\n\n", response->msg);
+    printf("# Response msg: %s\n\n", response->msg);
+}
+
+void freeResponse(ServerResponse *response)
+{
+  free(response->code);
+  free(response->msg);
 }
 
 int calculatePort(Sockets *sockets, char *response)

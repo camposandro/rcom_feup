@@ -138,6 +138,11 @@ int sendCmd(Sockets *sockets, char *msg);
 void receiveResponse(ServerResponse *response, int sockfd);
 
 /**
+ * Frees space allocated for a server response (code and message)
+ */
+void freeResponse(ServerResponse *response);
+
+/**
  * Calculates server port to connect data socket to
  */
 int calculatePort(Sockets *sockets, char *response);
