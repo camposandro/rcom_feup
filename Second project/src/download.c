@@ -43,19 +43,13 @@ int main(int argc, char **argv)
   transferFile(&sockets, arguments.filename);
 
   // free the allocated mem
-  freeResources(&arguments, &sockets);
+  freeResources(&sockets);
 
   return 0;
 }
 
 void parseURL(char *url, struct URLarguments *arguments)
 {
-  // allocate empty argument buffers
-  arguments->user = (char *)malloc(0);
-  arguments->pwd = (char *)malloc(0);
-  arguments->hostname = (char *)malloc(0);
-  arguments->filepath = (char *)malloc(0);
-
   // initial state
   URLstate state = INIT;
   const char *ftp = "ftp://";
@@ -87,7 +81,6 @@ void parseURL(char *url, struct URLarguments *arguments)
       }
       else
       {
-        arguments->user = (char *)realloc(arguments->user, j + 1);
         arguments->user[j++] = url[i];
       }
       break;
@@ -99,7 +92,6 @@ void parseURL(char *url, struct URLarguments *arguments)
       }
       else
       {
-        arguments->pwd = (char *)realloc(arguments->pwd, j + 1);
         arguments->pwd[j++] = url[i];
       }
       break;
@@ -111,12 +103,10 @@ void parseURL(char *url, struct URLarguments *arguments)
       }
       else
       {
-        arguments->hostname = (char *)realloc(arguments->hostname, j + 1);
         arguments->hostname[j++] = url[i];
       }
       break;
     case HOST:
-      arguments->filepath = (char *)realloc(arguments->filepath, j + 1);
       arguments->filepath[j++] = url[i];
       break;
     default:
@@ -126,7 +116,7 @@ void parseURL(char *url, struct URLarguments *arguments)
   }
 
   // parse filename from the file's path
-  arguments->filename = parseFilename(arguments->filepath);
+  parseFilename(arguments);
 
   // remove filename in filepath
   char *path, *lastSlash = strrchr(arguments->filepath, '/');
@@ -134,7 +124,7 @@ void parseURL(char *url, struct URLarguments *arguments)
   {
     int index = lastSlash - arguments->filepath;
 
-    path = (char *)malloc(index);
+    path = (char *)malloc(index * sizeof(char));
     memcpy(path, arguments->filepath, index);
   }
   else
@@ -143,37 +133,34 @@ void parseURL(char *url, struct URLarguments *arguments)
     path = (char *)malloc(sizeof(char));
     *path = '.';
   }
-  free(arguments->filepath);
-  arguments->filepath = path;
+  memset(arguments->filepath,0,sizeof(arguments->filepath));
+  memcpy(arguments->filepath,path,strlen(path));
+  free(path);  
 
   // get host ip address
-  arguments->hostIp = getip(arguments->hostname);
+  const char *ip = getip(arguments->hostname);
+  memset(arguments->hostIp,0,sizeof(arguments->hostIp));
+  memcpy(arguments->hostIp,ip,strlen(ip));
 
   printArguments(arguments);
 }
 
-char *parseFilename(char *path)
+void parseFilename(struct URLarguments *arguments)
 {
-  // allocate empty filename buffer
-  char *filename = (char *)malloc(0);
-
   int i = 0, j = 0;
-  for (; i < strlen(path); i++)
+  for (; i < strlen(arguments->filepath); i++)
   {
-    if (path[i] == '/')
+    if (arguments->filepath[i] == '/')
     {
       // reset filename buffer
-      filename = (char *)realloc(filename, 0);
+      memset(arguments->filename,0,sizeof(arguments->filename));
       j = 0;
     }
     else
     {
-      filename = (char *)realloc(filename, j + 1);
-      filename[j++] = path[i];
+      arguments->filename[j++] = arguments->filepath[i];
     }
   }
-
-  return filename;
 }
 
 char *getip(char *hostname)
@@ -208,8 +195,6 @@ int initConnection(Sockets *sockets, char *ip)
     exit(0);
   }
 
-  freeResponse(&response);
-
   return 0;
 }
 
@@ -217,7 +202,7 @@ int login(Sockets *sockets, char *user, char *pwd)
 {
   ServerResponse response;
 
-  char *msg = (char *)malloc(sizeof(user) + 5);
+  char *msg = (char *)malloc(strlen(user) + 5);
 
   // send user
   sprintf(msg, "user %s\n", user);
@@ -243,7 +228,6 @@ int login(Sockets *sockets, char *user, char *pwd)
     exit(0);
   }
 
-  freeResponse(&response);
   free(msg);
 
   return 0;
@@ -253,7 +237,7 @@ int changeDir(Sockets *sockets, char *filepath)
 {
   ServerResponse response;
 
-  char *msg = (char *)malloc(sizeof(filepath) + 4);
+  char *msg = (char *)malloc(strlen(filepath) + 4);
 
   sprintf(msg, "cwd %s\n", filepath);
   sendCmd(sockets, msg);
@@ -265,7 +249,7 @@ int changeDir(Sockets *sockets, char *filepath)
     exit(0);
   }
 
-  freeResponse(&response);
+  free(msg);
 
   return 0;
 }
@@ -287,8 +271,6 @@ int enterPasvMode(Sockets *sockets)
   // get port to connect data socket
   calculatePort(sockets, response.msg);
 
-  freeResponse(&response);
-
   return 0;
 }
 
@@ -304,7 +286,7 @@ void transferFile(Sockets *sockets, char *filename)
 {
   ServerResponse response;
 
-  char *msg = (char *)malloc(sizeof(filename) + 5);
+  char *msg = (char *)malloc(strlen(filename) + 5);
 
   // send retr
   sprintf(msg, "retr %s\n", filename);
@@ -318,21 +300,13 @@ void transferFile(Sockets *sockets, char *filename)
     exit(0);
   }
 
-  freeResponse(&response);
+  free(msg);
 
   saveFile(sockets->dataSockFd, filename);
-
-  free(msg);
 }
 
-void freeResources(struct URLarguments *arguments, Sockets *sockets)
+void freeResources(Sockets *sockets)
 {
-  free(arguments->user);
-  free(arguments->pwd);
-  free(arguments->hostname);
-  free(arguments->filepath);
-  free(arguments->filename);
-
   // close the open sockets
   close(sockets->controlSockFd);
   close(sockets->dataSockFd);
@@ -381,11 +355,11 @@ int sendCmd(Sockets *sockets, char *msg)
 
 void receiveResponse(ServerResponse *response, int sockfd)
 {
-  response->code = (char *)malloc(3 * sizeof(char));
-  response->msg = (char *)malloc(0);
-
   char c;
   int i = 0, j = 0;
+
+  memset(response->code,0,sizeof(response->code));
+  memset(response->msg,0,sizeof(response->msg));
 
   ResponseState state = READ_CODE;
 
@@ -429,24 +403,16 @@ void receiveResponse(ServerResponse *response, int sockfd)
         state = READ_FINAL;
       else
       {
-        response->msg = realloc(response->msg, j + 1);
         response->msg[j++] = c;
       }
       break;
     case READ_MULTIPLE:
       if (c == '\n')
       {
-        response->msg = realloc(response->msg, j + 1);
-        response->msg[j++] = c;
-
         state = READ_CODE;
         i = 0;
       }
-      else
-      {
-        response->msg = realloc(response->msg, j + 1);
-        response->msg[j++] = c;
-      }
+      response->msg[j++] = c;
       break;
     default:
       fprintf(stderr, "# Invalid response state");
@@ -460,12 +426,6 @@ void receiveResponse(ServerResponse *response, int sockfd)
     printf("# Response msg: \n%s\n\n", response->msg);
   else
     printf("# Response msg: %s\n\n", response->msg);
-}
-
-void freeResponse(ServerResponse *response)
-{
-  free(response->code);
-  free(response->msg);
 }
 
 int calculatePort(Sockets *sockets, char *response)

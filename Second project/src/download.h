@@ -20,12 +20,12 @@
  */
 typedef struct URLarguments
 {
-  char *user;
-  char *pwd;
-  char *hostname;
-  char *filepath;
-  char *filename;
-  char *hostIp;
+  char user[256];
+  char pwd[256];
+  char hostname[256];
+  char filepath[256];
+  char filename[256];
+  char hostIp[256];
 } URLarguments;
 
 /**
@@ -68,8 +68,8 @@ typedef enum ResponseState
  */
 typedef struct ServerResponse
 {
-  char *code;
-  char *msg;
+  char code[4];
+  char msg[1024];
 } ServerResponse;
 
 /**
@@ -80,7 +80,7 @@ void parseURL(char *url, struct URLarguments *arguments);
 /**
  * Parses the file's name from its path 
  */
-char *parseFilename(char *path);
+void parseFilename(struct URLarguments *arguments);
 
 /**
  * Gets the host's ip address according to its name
@@ -120,7 +120,7 @@ void transferFile(Sockets *sockets, char *filename);
 /**
  * Frees the allocated memory
  */
-void freeResources(struct URLarguments *arguments, Sockets *sockets);
+void freeResources(Sockets *sockets);
 
 /**
  * Handles the creation and the connection to a socket
@@ -136,11 +136,6 @@ int sendCmd(Sockets *sockets, char *msg);
  * Retrieves the server response code - read in format [%d%d%d][ -]
  */
 void receiveResponse(ServerResponse *response, int sockfd);
-
-/**
- * Frees space allocated for a server response (code and message)
- */
-void freeResponse(ServerResponse *response);
 
 /**
  * Calculates server port to connect data socket to
