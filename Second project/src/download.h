@@ -60,7 +60,7 @@ typedef enum ResponseState
   READ_CODE,
   READ_MSG,
   READ_MULTIPLE,
-  FINAL
+  READ_FINAL
 } ResponseState;
 
 /**

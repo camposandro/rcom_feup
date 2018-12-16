@@ -379,14 +379,17 @@ void receiveResponse(ServerResponse *response, int sockfd)
   int i = 0, j = 0;
 
   ResponseState state = READ_CODE;
-  while (state != FINAL)
+  
+  int multipleLineMsg = 0;
+
+  while (state != READ_FINAL)
   {
     read(sockfd, &c, 1);
 
     switch (state)
     {
     case READ_CODE:
-      // rserver 3-digit response code
+      // server 3-digit response code
       if (c == ' ')
       {
         if (i == 3)
@@ -400,24 +403,21 @@ void receiveResponse(ServerResponse *response, int sockfd)
           exit(0);
         }
       }
-      else
+      else if (c == '-')
       {
         // multiple line message
-        if (c == '-')
-        {
-          state = READ_MULTIPLE;
-          i = 0;
-        }
-        else if (isdigit(c))
-        {
-          response->code[i++] = c;
-        }
+        state = READ_MULTIPLE;
+        multipleLineMsg = 1;
+      }
+      else if (isdigit(c))
+      {
+        response->code[i++] = c;
       }
       break;
     case READ_MSG:
       // reads message
       if (c == '\n')
-        state = FINAL;
+        state = READ_FINAL;
       else
       {
         response->msg = realloc(response->msg, j + 1);
@@ -425,15 +425,18 @@ void receiveResponse(ServerResponse *response, int sockfd)
       }
       break;
     case READ_MULTIPLE:
-      // read response code again
-      if (c == response->code[i])
-        i++;
-      else if (i == 3)
+      if (c == '\n')
       {
-        if (c == ' ')
-          state = READ_MSG;
-        else if (c == '-')
-          i = 0;
+        response->msg = realloc(response->msg, j + 1);
+        response->msg[j++] = c;
+
+        state = READ_CODE;
+        i = 0;
+      }
+      else
+      {
+        response->msg = realloc(response->msg, j + 1);
+        response->msg[j++] = c;
       }
       break;
     default:
@@ -443,7 +446,11 @@ void receiveResponse(ServerResponse *response, int sockfd)
   }
 
   printf("# Response code: %s\n", response->code);
-  printf("# Response msg: %s\n\n", response->msg);
+
+  if (multipleLineMsg) 
+    printf("# Response msg: \n%s\n\n", response->msg);
+  else
+     printf("# Response msg: %s\n\n", response->msg);
 }
 
 int calculatePort(Sockets *sockets, char *response)
